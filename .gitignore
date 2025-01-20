@@ -1,1 +1,9 @@
 .env
+.vscode
+.pytest_cache
+dist/
+*.png
+*.img
+*.csv
+*.json
+llm_tools.code-workspace
