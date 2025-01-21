@@ -7,3 +7,4 @@ dist/
 *.csv
 *.json
 llm_tools.code-workspace
+__pycache__/

@@ -47,3 +47,4 @@ LLM_BASE_URL="https://api.deepseek.com"
 ##########################################
 TGB_USERNAME = os.environ.get('TGB_USERNAME')
 TGB_PASSWORD = os.environ.get('TGB_PASSWORD')
+TGB_BASEURL = 'https://www.tgb.cn/'

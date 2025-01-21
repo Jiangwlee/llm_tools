@@ -1,11 +1,17 @@
-import os
+import csv
+import time
 import json
+import re
+import random
 import requests
 import datetime
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from playwright.sync_api import sync_playwright
-from llm_tools.config import TGB_USERNAME, TGB_PASSWORD
+from llm_tools.config import TGB_USERNAME, TGB_PASSWORD, TGB_BASEURL
+from llm_tools.logger import get_logger
+
+logger = get_logger()
 
 def get_tgb_hot_articles():
     tgb = Taoguba()
@@ -29,7 +35,7 @@ class Taoguba:
         self.page.goto(login_url)
 
         # 等待页面加载
-        # self.page.wait_for_load_state("networkidle")
+        self.page.wait_for_load_state("networkidle")
         self.page.click("#userLoginBtn")
 
         # 填写用户名和密码
@@ -40,14 +46,109 @@ class Taoguba:
         self.page.click("#loginbtn1")
 
         # 等待页面跳转或验证登录状态
-        self.page.wait_for_timeout(3000)  # 等待 3 秒，可根据需要调整
+        # self.page.wait_for_timeout(3000)  # 等待 3 秒，可根据需要调整
 
         # 检查是否登录成功 (假设页面会包含某些用户标识元素)
-        if self.username in self.page.locator(".header-user-content").text_content():
+        if TGB_USERNAME in self.page.locator(".header-user-content").text_content():
         # if "我的主页" in self.page.content():
             print("登录成功")
         else:
             print("登录失败，请检查用户名和密码")
+
+    def crawl_blog(self, url: str):
+        """爬取用户的全部博客和回帖信息
+
+        ## Arguments:
+        - url: 个人博客入口链接. 比如: https://www.tgb.cn/user/blog/moreTopic?userID=1116585
+        """
+        # 第一步: 从入口获取所有帖子链接
+        self.page.goto(url)
+        soup = BeautifulSoup(self.page.content(), "html.parser")
+        form_tag = soup.find('form', {'name': 'main'})
+        links = form_tag.findAll('a', {'target': '_blank'})
+        blogs = [
+            {
+                'url': f"{TGB_BASEURL}{x['href']}",
+                'title': x['title']
+            } for x in links
+        ]
+
+        # 第二步: 顺序访问每个帖子，获取作者发言和回帖
+        results = []
+        for blog in blogs:
+            print("-" * 50)
+            print(f"【标题】{blog['title']}")
+            results.append(self.crawl_article(blog['url']))
+        return results
+
+    def crawl_article(self, url: str):
+        article = {}
+        self.page.goto(url)
+        soup = BeautifulSoup(self.page.content(), "html.parser")
+
+        # 读取标题
+        title_div = soup.find(id='gioMsg')
+        title = title_div['subject']
+        username = title_div['username'].strip()
+        article['title'] = title
+        article['username'] = username
+
+        # 提取页数
+        pc_fpag_div = soup.find('div', class_='pc_fpag')
+        pattern = r"/(\d+)页"
+        match = re.search(pattern, pc_fpag_div.text)
+        total_page = 0
+        if match:
+            page_number = match.group(1)  # 提取捕获组中的内容
+            total_page = int(page_number)
+            print("总页数：", total_page)
+        else:
+            print("未找到匹配的页数")
+
+        # 读取正文
+        content_div = soup.find(id='first')
+        article['content'] =content_div.text
+
+        # 读取评论
+        comments = self.read_comments(username)
+        
+        page_count = 2
+        while page_count <= total_page:
+            try:
+                self.page.goto(f"{url}-{str(page_count)}")
+                comments_of_page = self.read_comments(username)
+                comments.extend(comments_of_page)
+            except Exception as e:
+                logger.error(f"异常: {e}")
+            page_count += 1
+        article['comments'] = comments
+        self.save_comments_to_csv(comments, 'a')
+        return article
+
+    def read_comments(self, username: str):
+        comments = []
+        soup = BeautifulSoup(self.page.content(), "html.parser")
+        for comment in soup.find_all('div', attrs={"subject": True, "username": True}):
+            subject_attr = BeautifulSoup(comment['subject'], 'html.parser')
+            # 提取正文内容（去除所有 HTML 标签）
+            subject = subject_attr.get_text(separator='').strip()
+            # subject = comment['subject']
+            user = comment['username'].strip()
+            
+            # print(f"【{user}】{subject}")
+            if user.strip() == username and len(subject) > 50:
+                userid = comment['userid']
+                user_comment_data = soup.find('div', class_=f"comment-data user_{userid}")
+                comment_time = user_comment_data.find('span', class_='pcyclspan').text
+                print(comment_time)
+                comments.append({
+                    "subject": subject,
+                    "username": user,
+                    "comment_time": comment_time
+                })
+                print(f"subject: {subject}")
+                print(f"username: {user}")
+        return comments
 
     def __del__(self):
         """在类实例销毁时，关闭浏览器和 Playwright"""
@@ -163,12 +264,58 @@ class Taoguba:
 
         return articles
 
+    def random_wait(self):
+        # 生成 1 到 3 秒之间的随机等待时间，防止被反爬虫机制检测到
+        wait_time = random.uniform(1, 3)
+        # 打印等待时间
+        logger.info(f"等待时间: {wait_time:.2f} 秒")
+        # 等待
+        time.sleep(wait_time)
 
+    def save_comments_to_csv(self, comments, mode='w'):
+        if len(comments) == 0:
+            return
+        csv_list = [['author', 'comments', 'comment_time']]
+        filename = f"tgb_comments_{comments[0]['username']}.csv"
+        with open(filename, 'r', encoding='utf-8') as infile:
+            if len(infile.readline()) > 0 and 'a' in mode:
+                csv_list = []
+                logger.info("CSV 文件为追加模式, 不添加表头.")
+        for item in comments:
+            csv_list.append([item['username'], item['subject'], item['comment_time']])
+        with open(filename, mode, encoding='utf-8', newline="") as outfile:
+                writer = csv.writer(outfile)
+                writer.writerows(csv_list)
+
+
+ARTICLE_TEMPLATE = """
+## 标题: {title} 
+
+**作者: **{author}
+
+{content}
+
+"""
 # 测试代码
 if __name__ == "__main__":
+    # print(ARTICLE_TEMPLATE.format(title="标题A", author="zuozhe", content="content"))
+    
     import os
     tgb = Taoguba()
     tgb.login()
+    result = tgb.crawl_blog("https://www.tgb.cn/user/blog/moreTopic?userID=1116585")
+    # result = tgb.crawl_article("https://www.tgb.cn/a/1ykDEq6OT9h")
+    # tgb.save_comments_to_csv(result['comments'], mode='a')
+    articles = []
+    for blog in result:
+        username = blog['username']
+        title = blog['title']
+        content = blog['content']
+        articles.append(ARTICLE_TEMPLATE.format(title=title, author=username, content=content))
+        # tgb.save_comments_to_csv(blog['comments'], 'a')
+
+    with open(f"淘股吧_{result[0]['username']}.md", 'w', encoding='utf-8') as outfile:
+        outfile.write('\n'.join(articles))
     # hot_articles = tgb.get_tgb_hot_articles()
     # for article in hot_articles:
     #     print(f"用户: {article['userName']}, 标题: {article['subject']}")
