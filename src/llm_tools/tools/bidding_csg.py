@@ -93,18 +93,27 @@ class BiddingCSG:
     def __init__(self):
         """初始化 Playwright 和浏览器实例"""
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled"])  # 设置为 False 以便调试
+        self.browser = self.playwright.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])  # 设置为 False 以便调试
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
         self.prev_page = None
         self.bidding_list = []
         self.filtered_list = []
+        self.end_date = None
+        self.stop_crawl = True
 
-    def search(self, keyword, max_page=65535):
+    def search(self, keyword, max_page=65535, end_date=None, query_url=None):
         """检索公告
+        ## 参数
+        - keyword: 检索关键字
+        - max_page: 最大爬取页数
+        - end_date: 要爬取公告的结束日期。取值为 None 或者 “2024-12-06” 格式的的日期字符串。
+        - query_url: 检索页面地址，默认为：https://www.bidding.csg.cn/dbsearch.jspx?q=
         """
-        start_url = f"https://www.bidding.csg.cn/dbsearch.jspx?q="
-        self.page.goto(start_url)
+        self.stop_crawl = False
+        self.end_date = end_date
+        start_url = f"https://www.bidding.csg.cn/dbsearch.jspx?q=" if query_url is None else query_url
+        self.page.goto(start_url, wait_until='load')
 
         # 填入搜索关键字
         self.page.fill("input[id='txtKey']", keyword)
@@ -114,9 +123,10 @@ class BiddingCSG:
         # 假设点击一个按钮会打开新标签页
         with self.page.expect_popup() as popup_info:
             self.page.click("input[class='seachBtn']")
-        
+
         self.prev_page = self.page
         self.page = popup_info.value
+        self.page.locator('div.List2').wait_for(state='visible')
 
         # 在新标签页中操作
         logger.info(self.page.title())
@@ -148,11 +158,16 @@ class BiddingCSG:
             if next_page_tag.get_attribute('disabled') == 'disabled':
                 logger.info("已处理完全部页面")
                 break
+            if self.stop_crawl:
+                logger.info("爬取结束")
+                break
             count += 1
 
     def next_page(self):
         # 打开下一页
         self.page.click('text=下一页')
+        self.page.wait_for_load_state('load')
+        self.page.locator('div.List2').wait_for(state='visible')
         self.parse(self.page.content())
 
     def parse(self, content_text):
@@ -171,20 +186,44 @@ class BiddingCSG:
                     # print(f"类型：{links[0].text}, 招标方: {links[1].text}, 项目名称: {links[2].text}, 链接：https://www.bidding.csg.cn/{links[2].get('href')}")
                     create_date = item.find('span', class_='Black14 Gray')
                     # print(f"日期: {create_date.text}")
-                    self.bidding_list.append({
-                        "type": links[0].text,
-                        "part_a": links[1].text,
-                        "project": links[2].text,
-                        "date": create_date.text,
-                        "url": f"https://www.bidding.csg.cn/{links[2].get('href')}"
-                    })
+                    if create_date.text < self.end_date:
+                        self.stop_crawl = True
+                    else:
+                        self.bidding_list.append({
+                            "type": links[0].text,
+                            "part_a": links[1].text,
+                            "project": links[2].text,
+                            "date": create_date.text,
+                            "url": f"https://www.bidding.csg.cn{links[2].get('href')}"
+                        })
             else:
                 print(f"未找到正文内容")
                 return ""
         except Exception as e:
             print(f"读取内容失败: {e}")
             return ""
-        
+
+    def read_bidding_page(self, url):
+        """阅读标讯.
+        """
+        try:
+            self.page.goto(url, wait_until='load')
+            self.page.locator('div.s-content').wait_for(state='visible')
+            soup = BeautifulSoup(self.page.content(), 'html.parser')
+
+            title_tag = soup.find('h1', class_='s-title')
+            date_tag = soup.find('div', class_='s-date')
+            content_div = soup.find('div', class_='Content')
+            return {
+                "title": title_tag.text,
+                "date": date_tag.text,
+                "content": content_div.text
+            }
+        except Exception as e:
+            logger.error(f"访问链接时发生错误: {url}。 错误信息: {e}")
+
+        self.random_wait()
+
     def filter(self, keyword):
         """过滤出包含【投标报价】的公告. 例子: https://www.bidding.csg.cn/zbhxrgs/1200383714.jhtml
         """
@@ -192,7 +231,7 @@ class BiddingCSG:
         update_list = []
         for item in bidding_list:
             try:
-                self.page.goto(item['url'])
+                self.page.goto(item['url'], wait_until='load')
                 soup = BeautifulSoup(self.page.content(), 'html.parser')
                 content_div = soup.find('div', class_='Content')
 
@@ -492,7 +531,7 @@ class BiddingCSG:
                 if len(result) > 0:
                     url = result[0][4]
                     logger.info(f"查询招标公告 url: {url}")
-                    self.page.goto(url)
+                    self.page.goto(url, wait_until='load')
                     soup = BeautifulSoup(self.page.content(), 'html.parser')
                     content_div = soup.find('div', class_='Content') # 找到内容部分
                     bid_parser = BiddingParser(str(content_div))

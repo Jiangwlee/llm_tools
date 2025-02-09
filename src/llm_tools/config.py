@@ -25,6 +25,7 @@ CONSOLE_HANDLER.setLevel(logging.DEBUG)
 ##########################################
 # 数据库配置
 ##########################################
+DB_ENABLE = False
 DB_HOST=os.getenv("DB_HOST", "localhost")
 DB_USER=os.getenv("DB_USER", "jfsok")
 DB_PASSWORD=os.getenv("DB_PASSWORD", "iTbpamPcUYeqkY9k63rQ")
@@ -35,6 +36,16 @@ DB_CONFIG = {
     "host": DB_HOST,
     "database": DB_DATABASE
 }
+
+##########################################
+# 存储目录配置
+##########################################
+DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.expanduser("~"), 'llm_tools'))
+BIDDING_DIR = os.path.join(DATA_DIR, 'bidding')
+TGB_DIR = os.path.join(DATA_DIR, 'tgb')
+for dir in [DATA_DIR, BIDDING_DIR, TGB_DIR]:
+    if not os.path.exists(dir):
+        os.mkdir(dir)
 
 ##########################################
 # 大模型配置

@@ -1,0 +1,2 @@
+0 * * * * export PYTHONPATH=${PYTHONPATH}:/app/src/ && /usr/local/bin/python /app/src/llm_tools/crawlers/bidding_notification.py >> /var/log/bidding_notification.log 2>&1
+0 * * * * export PYTHONPATH=${PYTHONPATH}:/app/src/ && /usr/local/bin/python /app/src/llm_tools/crawlers/tgb.py >> /var/log/tgb.log 2>&1

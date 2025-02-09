@@ -6,5 +6,6 @@ dist/
 *.img
 *.csv
 *.json
+*.jsonl
 llm_tools.code-workspace
 __pycache__/

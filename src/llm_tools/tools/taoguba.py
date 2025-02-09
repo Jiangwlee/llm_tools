@@ -10,6 +10,64 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from playwright.sync_api import sync_playwright
 from llm_tools.config import TGB_USERNAME, TGB_PASSWORD, TGB_BASEURL
 from llm_tools.logger import get_logger
+from llm_tools.tools.deepseek import deepseek_chat
+
+TGB_GENERATOR_SYSTEM_PROMPT = """
+<!-- version: 0.1 -->
+<!-- language: 中文 -->
+<!-- author: Bruce.Li -->
+# Role
+
+Alpaca数据处理专家和人工智能数据转换工程师
+
+## Objective
+
+将用户提供的原始数据转成 Alpaca 格式并输出，用于训练一个对话式交易助手
+
+## Background
+
+用户已经拥有一个原始数据集，但需要将其转换为适用于Alpaca模型训练的格式。用户可能对Alpaca模型的训练数据结构和要求不太熟悉，需要专业的帮助来完成数据的转换和优化。
+
+## Skills
+
+你具备数据转换、特征工程、数据标注和模型训练等多方面的专业技能，能够高效地处理和转换大规模数据集，同时确保数据的质量和一致性。
+
+## Constraints
+- 转换后的数据应符合Alpaca模型的训练要求，确保数据的格式和标注准确无误。
+- 数据转换过程应保持数据的完整性和原始信息，避免丢失重要信息。
+- 生成的 instruction 应当具有多样性和深度，确保每个指令能够从不同角度满足对话式交易助手的需求。
+- 生成的 instruction 应当具有独特性，并保持上下文一致性的检查
+
+### Example
+
+以下是一些 instruction 不同表达方式的例子，你还需要从更多的角度进行思考：
+1. 使用任务型表达：例如，“请分析市场热点选择的最佳策略。”
+2. 使用陈述型表达：例如，“总结避免追高的方法。”
+
+## Output
+
+一条或多条 Alpaca 数据，以下是输出的例子：
+
+### Example
+
+{"instruction": "Some instruction 1", "input": "Question 1", "output": "Some answer 1 from user input"}
+{"instruction": "Some instruction 2", "input": "Question 2", "output": "Some answer 2 from user input"}
+
+### Note
+1. alpaca 数据集中的 <output> 应当保持用户数据的对话风格
+2. alpaca 数据集中的 <input> 应当简洁明了
+
+## Workflow
+1. 仔细阅读并理解用户提供的输入，如果输入内容与股票交易无关，则友好地结束对话
+2. 提取其中与交易系统、交易策略、市场趋势、短线交易、情绪周期、心态控制或投资经验相关的核心内容，去除与交易无关的部分，在 <thinking> 标签中输出简洁明了的【观点】
+3. 针对每一个【观点】，从不同的角度思考 instruction 的表达方式
+4. 生成 alpaca 数据，确保符合 <constraints> 的要求，并输出到 <dataset> 标签
+
+## Input
+
+
+
+"""
 
 logger = get_logger()
 
@@ -17,11 +75,45 @@ def get_tgb_hot_articles():
     tgb = Taoguba()
     return tgb.get_hot_articles()
 
+def extract_xml(content: str, tag: str):
+    start_index = content.find(f"<{tag}>") + len(f"<{tag}>")
+    if start_index == -1:
+        return ""
+    end_index = content.find(f"</{tag}>")
+    dataset_content = content[start_index:end_index]
+    return dataset_content
+
+def generate_tgb_dataset(csv_file: str, start=1):
+    """生成淘股吧数据集.
+    ## parameters
+    - filepath: 原始 csv 数据集路径
+    """
+    with open(csv_file, mode='r', encoding='utf-8') as file:
+        csv_reader = csv.reader(file)
+        index = 0
+        while index < start:
+            logger.info(f"跳过第【{index}】行")
+            next(csv_reader)  # 跳过 header 行
+            index += 1
+        for row in csv_reader:
+            print("-" * 50)
+            print(f"正在处理第【{index}】行")
+            resp = deepseek_chat(user_prompt=row[1], system_prompt=TGB_GENERATOR_SYSTEM_PROMPT)
+            print(resp)
+            content = extract_xml(resp, "dataset")
+            if len(content) > 0:
+                append_to_file(f"{csv_file[:-4]}.jsonl", content)
+            index += 1
+
+def append_to_file(filename: str, content: str):
+    with open(filename, 'a', encoding='utf-8') as outfile:
+        outfile.write(content.lstrip())
+
 class Taoguba:
     def __init__(self):
         """初始化 Playwright 和浏览器实例"""
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled"])  # 设置为 False 以便调试
+        self.browser = self.playwright.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])  # 设置为 False 以便调试
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
 
@@ -296,10 +388,8 @@ ARTICLE_TEMPLATE = """
 {content}
 
 """
-# 测试代码
-if __name__ == "__main__":
-    # print(ARTICLE_TEMPLATE.format(title="标题A", author="zuozhe", content="content"))
-    
+
+def test():
     import os
     tgb = Taoguba()
     tgb.login()
@@ -325,3 +415,9 @@ if __name__ == "__main__":
     # print(tgb.get_hot_articles())
     # resp = requests.get("http://home.justdofun.top:12345/tgb/hot-articles")
     # print(resp.text)
+
+# 测试代码
+if __name__ == "__main__":
+    # print(ARTICLE_TEMPLATE.format(title="标题A", author="zuozhe", content="content"))
+    generate_tgb_dataset('tgb_comments_涅盘重升.csv')
+    
