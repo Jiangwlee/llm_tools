@@ -5,6 +5,7 @@
 import os
 import re
 import json
+import argparse
 from datetime import date, datetime
 from llm_tools.tools.bidding_csg import BiddingCSG
 from llm_tools.connector import getConnection, get_logger
@@ -12,11 +13,18 @@ from llm_tools.config import BIDDING_DIR
 
 logger = get_logger()
 
+def format_date(date_str):
+    return datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
+
 class BiddingCrawler:
     def __init__(self, end_date: str):
+        """
+        ## Parameter:
+        end_date: 结束日期，格式为：20250102 形式
+        """
         self.start_url = "https://www.bidding.csg.cn/dbsearch.jspx?channelId=309&types=%E6%9C%8D%E5%8A%A1&org=&q="
         self.bidding_notices = []
-        self.end_date = end_date
+        self.end_date = format_date(end_date)
 
     def crawl(self):
         crawler = BiddingCSG()
@@ -120,7 +128,13 @@ class BiddingCrawler:
 
 
 if __name__ == '__main__':
-    date_str = date.today().isoformat()
+    parser = argparse.ArgumentParser(description="Bidding Crawler Script")
+    parser.add_argument('--date', type=str, default=date.today().strftime('%Y%m%d'),
+                        help="Specify the date in YYYYMMDD format (default: today's date)")
+
+    args = parser.parse_args()
+    date_str = args.date  # 使用命令行参数中的日期
+
     crawler = BiddingCrawler(date_str)
     crawler.crawl()
-    crawler.save(date.today().strftime('%Y%m%d'))
+    crawler.save(date_str) 
