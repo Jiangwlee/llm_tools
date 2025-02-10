@@ -96,10 +96,10 @@ def generate_tgb_dataset(csv_file: str, start=1):
             next(csv_reader)  # 跳过 header 行
             index += 1
         for row in csv_reader:
-            print("-" * 50)
-            print(f"正在处理第【{index}】行")
+            logger.info("-" * 50)
+            logger.info(f"正在处理第【{index}】行")
             resp = deepseek_chat(user_prompt=row[1], system_prompt=TGB_GENERATOR_SYSTEM_PROMPT)
-            print(resp)
+            logger.info(resp)
             content = extract_xml(resp, "dataset")
             if len(content) > 0:
                 append_to_file(f"{csv_file[:-4]}.jsonl", content)
@@ -143,9 +143,9 @@ class Taoguba:
         # 检查是否登录成功 (假设页面会包含某些用户标识元素)
         if TGB_USERNAME in self.page.locator(".header-user-content").text_content():
         # if "我的主页" in self.page.content():
-            print("登录成功")
+            logger.info("登录成功")
         else:
-            print("登录失败，请检查用户名和密码")
+            logger.info("登录失败，请检查用户名和密码")
 
     def crawl_blog(self, url: str):
         """爬取用户的全部博客和回帖信息
@@ -168,8 +168,8 @@ class Taoguba:
         # 第二步: 顺序访问每个帖子，获取作者发言和回帖
         results = []
         for blog in blogs:
-            print("-" * 50)
-            print(f"【标题】{blog['title']}")
+            logger.info("-" * 50)
+            logger.info(f"【标题】{blog['title']}")
             results.append(self.crawl_article(blog['url']))
         return results
 
@@ -193,9 +193,9 @@ class Taoguba:
         if match:
             page_number = match.group(1)  # 提取捕获组中的内容
             total_page = int(page_number)
-            print("总页数：", total_page)
+            logger.info("总页数：", total_page)
         else:
-            print("未找到匹配的页数")
+            logger.info("未找到匹配的页数")
 
         # 读取正文
         content_div = soup.find(id='first')
@@ -227,24 +227,24 @@ class Taoguba:
             # subject = comment['subject']
             user = comment['username'].strip()
             
-            # print(f"【{user}】{subject}")
+            # logger.info(f"【{user}】{subject}")
             if user.strip() == username and len(subject) > 50:
                 userid = comment['userid']
                 user_comment_data = soup.find('div', class_=f"comment-data user_{userid}")
                 comment_time = user_comment_data.find('span', class_='pcyclspan').text
-                print(comment_time)
+                logger.info(comment_time)
                 comments.append({
                     "subject": subject,
                     "username": user,
                     "comment_time": comment_time
                 })
-                print(f"subject: {subject}")
-                print(f"username: {user}")
+                logger.info(f"subject: {subject}")
+                logger.info(f"username: {user}")
         return comments
 
     def __del__(self):
         """在类实例销毁时，关闭浏览器和 Playwright"""
-        print("正在关闭浏览器...")
+        logger.info("正在关闭浏览器...")
         if self.browser:
             self.browser.close()
         if self.playwright:
@@ -272,10 +272,10 @@ class Taoguba:
                 content = content_div.get_text(separator="\n", strip=True)
                 return content
             else:
-                print(f"未找到正文内容: {url}")
+                logger.info(f"未找到正文内容: {url}")
                 return ""
         except Exception as e:
-            print(f"读取文章失败: {url}, 错误: {e}")
+            logger.info(f"读取文章失败: {url}, 错误: {e}")
             return ""
 
     def get_hot_articles(self):
@@ -335,7 +335,7 @@ class Taoguba:
             ]
             return self.get_articles(articles)
         else:
-            print(f"请求失败，状态码: {response.status_code}")
+            logger.info(f"请求失败，状态码: {response.status_code}")
             return []
 
     def get_articles(self, articles):
@@ -351,7 +351,7 @@ class Taoguba:
                 try:
                     article['content'] = future.result()
                 except Exception as e:
-                    print(f"处理文章时出错: {article['url']}, 错误: {e}")
+                    logger.info(f"处理文章时出错: {article['url']}, 错误: {e}")
                     article['content'] = ""
 
         return articles
@@ -408,16 +408,17 @@ def test():
         outfile.write('\n'.join(articles))
     # hot_articles = tgb.get_tgb_hot_articles()
     # for article in hot_articles:
-    #     print(f"用户: {article['userName']}, 标题: {article['subject']}")
-    #     print(f"内容: {article['content'][:100]}...")  # 仅打印前100字符
+    #     logger.info(f"用户: {article['userName']}, 标题: {article['subject']}")
+    #     logger.info(f"内容: {article['content'][:100]}...")  # 仅打印前100字符
     
-    # print(hot_articles[0])
-    # print(tgb.get_hot_articles())
+    # logger.info(hot_articles[0])
+    # logger.info(tgb.get_hot_articles())
     # resp = requests.get("http://home.justdofun.top:12345/tgb/hot-articles")
-    # print(resp.text)
+    # logger.info(resp.text)
 
 # 测试代码
 if __name__ == "__main__":
-    # print(ARTICLE_TEMPLATE.format(title="标题A", author="zuozhe", content="content"))
+    # logger.info(ARTICLE_TEMPLATE.format(title="标题A", author="zuozhe", content="content"))
     generate_tgb_dataset('tgb_comments_涅盘重升.csv')
-    
+
+

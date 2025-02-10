@@ -8,4 +8,4 @@ docker build -t llm_tools:latest .
 
 # 项目运行
 
-docker run --rm --name test -p 12345:8000 llm_tools:latest
+docker run --name test -p 12345:8000 -e TZ=Asia/Shanghai -d llm_tools:latest

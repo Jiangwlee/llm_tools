@@ -10,6 +10,7 @@ class TgbCrawler:
     def crawl(self):
         tgb = Taoguba()
         self.hot_articles = tgb.get_hot_articles()
+        
 
     def save(self):
         with open(os.path.join(TGB_DIR, f"hot_articles.json"), 'w', encoding='utf-8') as outfile:
