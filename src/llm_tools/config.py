@@ -50,8 +50,11 @@ for dir in [DATA_DIR, BIDDING_DIR, TGB_DIR]:
 ##########################################
 # 大模型配置
 ##########################################
-LLM_API_KEY=os.environ.get("DEEPSEEK_API_KEY")
+#LLM_API_KEY=os.environ.get("DEEPSEEK_API_KEY")
+LLM_API_KEY=os.environ.get("DOUBAO_API_KEY")
 LLM_BASE_URL="https://api.deepseek.com"
+LLM_DOUBAO_DEEPSEEK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
+LLM_DOUBAO_DEEPSEEK_MODEL="ep-20250211154251-jm8rv"
 
 ##########################################
 # 淘股吧配置
