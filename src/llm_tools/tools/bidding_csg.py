@@ -8,10 +8,33 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 from llm_tools.connector import getConnection
 from llm_tools.logger import get_logger
-from llm_tools.config import LLM_API_KEY, LLM_BASE_URL
 from llm_tools.utils.number_util import is_number
+from llm_tools.tools.deepseek import deepseek_chat
+from llm_tools.tools.coze import coze_chat
+from llm_tools.tools.prompts import SYS_BIDDING_SUMMARY_PROMPT, SYS_PRICE_EXTRACTION_PROMPT
 
 logger = get_logger()
+
+class LLMHelper:
+    def __init__(self):
+        raise TypeError("LLMHelper cannot be instantiated")
+
+    def llm_summary(user_prompt):
+        """调用大模型总结内容.
+        """
+        try:
+            return deepseek_chat(str(user_prompt), SYS_BIDDING_SUMMARY_PROMPT, temperature=0.1)
+        except Exception as ex:
+            logger.warning(f"llm_summary 调用大模型出错, 错误信息: {ex}")
+
+    def llm_price_extract(user_prompt):
+        """调用大模型提取价格信息.
+        """
+        try:
+            # return deepseek_chat(str(user_prompt), SYS_PRICE_EXTRACTION_PROMPT, temperature=0.1)
+            return coze_chat(str(user_prompt), SYS_PRICE_EXTRACTION_PROMPT)
+        except Exception as ex:
+            logger.warning(f"llm_price_extract 调用大模型出错, 错误信息: {ex}")
 
 class BiddingParser:
     def __init__(self, html: str):
@@ -124,10 +147,10 @@ class BiddingCSG:
     """
     不要使用 requests, 目标网站有爬虫检测, 简单爬虫容易被检测到, 导致封 IP.
     """
-    def __init__(self):
+    def __init__(self, verbose=False):
         """初始化 Playwright 和浏览器实例"""
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])  # 设置为 False 以便调试
+        self.browser = self.playwright.chromium.launch(headless=not verbose, args=["--disable-blink-features=AutomationControlled"])  # 设置为 False 以便调试
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
         self.prev_page = None
@@ -303,7 +326,7 @@ class BiddingCSG:
 
         self.random_wait()
 
-    def filter(self, keyword):
+    def filter(self, keyword, bidding_type=None):
         """
         过滤出包含特定关键字的公告。
 
@@ -311,6 +334,7 @@ class BiddingCSG:
 
         参数：
             keyword (str): 过滤关键字。
+            bidding_type (int, 可选): 公告类型，1=投标报价，2=投标费率。默认为 None。
 
         返回值：
             None
@@ -326,20 +350,26 @@ class BiddingCSG:
                 title_tag = soup.find('h1', class_='s-title')
                 item['project'] = title_tag.text
 
-                found_elements = content_div.find_all(lambda tag: '>投标报价<' in str(tag))
-
-                # 输出结果
-                if found_elements:
-                    logger.info("找到包含 '>投标报价<' 的标签：")
-                    logger.info(content_div.text)
-                    result = self.llm_summary(content_div)
-                    logger.info(result)
-                    item['summary'] = result
-                    update_list.append(item)
-                    # break
-
-                # if content_div.text.find('投标报价') > 0:
-                #     self.filtered_list.append(item)
+                if bidding_type == 1 or bidding_type is None:
+                    found_elements = content_div.find_all(lambda tag: '>投标报价<' in str(tag))
+                    if found_elements:
+                        logger.info("找到包含 '>投标报价<' 的标签：")
+                        logger.info(content_div.text)
+                        result = LLMHelper.llm_summary(content_div)
+                        logger.info(result)
+                        item['summary'] = result
+                        update_list.append(item)
+                        # break
+                if bidding_type == 2 or bidding_type is None:
+                    found_elements = content_div.find_all(lambda tag: '>投标费率<' in str(tag))
+                    if found_elements:
+                        logger.info(f"找到投标费率, 尝试使用大模型提取投标费率. URL: {item['url']}")
+                        result = LLMHelper.llm_price_extract(self.page.content())
+                        logger.info(f"大模型解读结果: \n{json.dumps(result, indent=2, ensure_ascii=False)}")
+                        item['summary'] = result
+                        update_list.append(item)
+                if (bidding_type == 1 and not content_div.find_all(lambda tag: '>投标报价<' in str(tag))) or (bidding_type == 2 and not content_div.find_all(lambda tag: '>投标费率<' in str(tag))):
+                    logger.warning(f"无投标报价和投标费率，跳过此公告.")
             except Exception as e:
                 logger.error(f"访问链接时发生错误: {item['url']}")
 
@@ -497,87 +527,6 @@ class BiddingCSG:
 
         print(f"加载了 {len(self.bidding_list)} 条记录")
 
-    def llm_summary(self, user_prompt):
-        """调用大模型总结内容.
-        """
-        client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
-
-        SYSTEM_PROMPT = """
-        请仔细阅读用户提供的 HTML 内容, 提取信息, 以 JSON 格式输出。只输出 JSON 字符串, 不得输出其他内容, 也不得输出 Markdown 标记.
-
-        以下是一个输出的例子:
-        {
-            "招标编号": 招标编号,
-            "评标情况": [
-                {
-                    "标的": 标的1,
-                    "标包": 标包1,
-                    "候选人": 中标候选人名称,
-                    "投标报价": 285
-                },
-                {
-                    "标的": 标的1,
-                    "标包": 标包2,
-                    "候选人": 中标候选人名称,
-                    "投标报价": 112.58
-                },
-            ]
-        }
-
-        """
-
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": str(user_prompt)},
-            ],
-            stream=False
-        )
-
-        resp = response.choices[0].message.content
-        # print(resp)
-        return resp
-
-    def llm_price_extract(self, user_prompt):
-        """调用大模型提取价格信息.
-        """
-        client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
-
-        SYSTEM_PROMPT = """
-        请仔细阅读用户提供的 HTML 内容, 提取信息, 以 JSON 格式输出。只输出 JSON 字符串, 不得输出其他内容, 也不得输出 Markdown 标记.
-
-        以下是一个输出的例子:
-        {
-            "招标编号": 招标编号,
-            "招标情况": [
-                {
-                    "标的": 标的1,
-                    "标包": 标包1,
-                    "最高限价": 332
-                },
-                {
-                    "标的": 标的1,
-                    "标包": 标包2,
-                    "最高限价": 177.42
-                },
-            ]
-        }
-
-        """
-
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": str(user_prompt)},
-            ],
-            stream=False
-        )
-
-        resp = response.choices[0].message.content
-        # print(resp)
-        return resp
     
     def analyze(self, keyword):
         """分析中标价格和招标价格
@@ -662,11 +611,11 @@ class BiddingCSG:
         time.sleep(wait_time)
 
 class BiddingCsgAnalyzer:
-    def output_as_csv(self):
+    def output_as_csv(self, keyword: str, bidding_type: int):
         # 以 csv 格式输出对比结果
         query = """
-        SELECT * FROM llm_tools.bidding_csg bc 
-        WHERE summary is not NULL AND price is not NULL;
+        SELECT * FROM llm_tools.bidding_csg bc
+        WHERE type='公示公告' AND summary is not NULL AND price is not NULL AND project LIKE %s;
         """
 
         csv_list = []
@@ -676,7 +625,7 @@ class BiddingCsgAnalyzer:
             cursor = connection.cursor()
 
             # 执行查询
-            cursor.execute(query)
+            cursor.execute(query, (f"%{keyword}%",))
 
             # 获取查询结果
             results = cursor.fetchall()
@@ -684,28 +633,47 @@ class BiddingCsgAnalyzer:
             # 输出结果
             if results:
                 logger.info(f"找到 {len(results)} 条关于 '{keyword}' 的有价格中标记录.")
-                header = ["招标编号", "甲方", "项目名称", "公告日期", "公告链接", "标的名称", "标包名称", "最高限价(万元)", "中标公司", "中标价格(万元)"]
-                csv_list.append(header)
-                for row in results:
-                    project = row[0]
-                    part_a = row[1]
-                    annoce_date = row[3].strftime("%Y-%m-%d")
-                    url = row[4]
-                    summary = row[5]
-                    price = row[6]
-                    summary_obj = json.loads(summary)
-                    price_obj = json.loads(price)
-                    code = summary_obj["招标编号"]
-                    for r in summary_obj["评标情况"]:
-                        subject = r["标的"]
-                        package = r["标包"]
-                        company = r["候选人"]
-                        price = r["投标报价"]
-                        for item in price_obj:
-                            if is_number(str(price)) and is_number(item['price']) and item['package'] == package:
-                                data = [code, part_a, project, annoce_date, url, subject, package, item['price'], company, str(price)]
-                                csv_list.append(data)
+                if bidding_type == 1:
+                    header = ["招标编号", "甲方", "项目名称", "公告日期", "公告链接", "标的名称", "标包名称", "最高限价(万元)", "中标公司", "中标价格(万元)"]
+                    csv_list.append(header)
+                    for row in results:
+                        project = row[0]
+                        part_a = row[1]
+                        annoce_date = row[3].strftime("%Y-%m-%d")
+                        url = row[4]
+                        summary = row[5]
+                        price = row[6]
+                        summary_obj = json.loads(summary)
+                        price_obj = json.loads(price)
+                        code = summary_obj["招标编号"]
+                        for r in summary_obj["评标情况"]:
+                            subject = r["标的"]
+                            package = r["标包"]
+                            company = r["候选人"]
+                            price = r["投标报价"]
+                            for item in price_obj:
+                                if is_number(str(price)) and is_number(item['price']) and item['package'] == package:
+                                    data = [code, part_a, project, annoce_date, url, subject, package, item['price'], company, str(price)]
+                                    csv_list.append(data)
                     # break
+                else:
+                    header = ["招标编号", "甲方", "项目名称", "公告日期", "公告链接", "标的名称", "标包名称", "投标费率"]
+                    csv_list.append(header)
+                    for row in results:
+                        project = row[0]
+                        part_a = row[1]
+                        annoce_date = row[3].strftime("%Y-%m-%d")
+                        url = row[4]
+                        summary = row[5]
+                        price = row[6]
+                        summary_obj = json.loads(summary)
+                        code = summary_obj["招标编号"]
+                        for r in summary_obj["招标情况"]:
+                            subject = r["标的"]
+                            package = r["标包"]
+                            price_rate = r["投标费率"]
+                            data = [code, part_a, project, annoce_date, url, subject, package, price_rate]
+                            csv_list.append(data)
             else:
                 logger.info(f"未找到包含关键字 '{keyword}' 的记录。")
             
@@ -723,18 +691,64 @@ class BiddingCsgAnalyzer:
                 connection.close()
                 logger.info("数据库连接已关闭")
 
-def get_price_info(keyword: str):
+def get_price_info(keyword: str, bidding_type=None):
     """
     下载招投标成交信息.
     """
-    crawler = BiddingCSG()
-    pass
+    csg = BiddingCSG(verbose=True)
+    csg.search(keyword)
+    csg.save_to_db()
+    csg.filter(keyword, bidding_type)
+    if bidding_type == 1:
+        csg.analyze(keyword)
+
+def query_price(keyword: str, bidding_type: int):
+    """
+    查询成交价格.
+
+    参数:
+        - keyword: 甲方公司名称
+    
+    返回值:
+        - 无. 查询结果保存于 bidding_csg.csv
+    """
+    analyzer = BiddingCsgAnalyzer()
+    analyzer.output_as_csv(keyword, bidding_type)
+
+import argparse
+
+USAGE = """
+# 下载历史中标成交价格
+
+python bidding_csg.py -d -n "汕头供电局" -t 1
+
+# 导出到 csv 文件
+
+python bidding_csg.py -q -n "汕头供电局" -t 1
+"""
 
 if __name__ == '__main__':
-    keyword = "南方电网数字平台科技"
-    csg = BiddingCSG()
-    csg.search("广东电网有限责任公司汕头供电局", 5)
-    # csg.save_to_db()
-    # csg.filter(keyword)
-    # csg.analyze(keyword)
-    # csg.output_as_csv()
+    print(USAGE)
+    parser = argparse.ArgumentParser(description="下载招投标公告并查询成交价格")
+    parser.add_argument("-d", action="store_true", help="执行 get_price_info 下载招投标公告")
+    parser.add_argument("-q", action="store_true", help="执行 query_price 来查询成交价格")
+    parser.add_argument("-n", type=str, help="要查询的甲方单位名称", required=True)
+    parser.add_argument("-t", type=int, choices=[1, 2], help="公告类型: 1=投标报价, 2=投标费率")
+
+    args = parser.parse_args()
+
+    if args.t:
+        logger.info(f"公告类型: {args.t}")
+
+    if not args.d and not args.q:
+        parser.error("必须提供 -d 或 -q 参数")
+
+    keyword = args.n
+    logger.info(f"查询关键字: {keyword}")
+
+    if args.d:
+        logger.info("执行 get_price_info")
+        get_price_info(keyword, args.t)
+    if args.q:
+        logger.info("执行 query_price")
+        query_price(keyword, args.t)
