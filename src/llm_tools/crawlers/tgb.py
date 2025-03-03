@@ -15,10 +15,10 @@ SYS_PROMPT = """
 必要时可以调用搜索工具来查询股票上涨的原因
 
 分析结束后，按照如下格式输出：
-# 标题：<subject>
-## 作者：<userName>
-## 地址：<url>
-## 总结：
+### 标题：<subject>
+#### 作者：<userName>
+#### 地址：<url>
+#### 总结：
 - 市场情绪：<市场整体情绪总结>
 - 主线板块：<市场的主线板块>
 - 核心个股：<市场的领涨核心和上涨原因>
@@ -70,7 +70,8 @@ class TgbCrawler:
             return json.load(infile)
 
     def summarize(self, article):
-        summary = deepseek_chat(article, SYS_PROMPT)
+        # summary = deepseek_chat(article, SYS_PROMPT)
+        summary = deepseek_chat(article, SYS_PROMPT, api_key='sk-dtutquenqznknnrhrykiqzaxwwxruifmfwwnbrxkajwmkbmf', base_url='https://api.siliconflow.cn/v1', model='deepseek-ai/DeepSeek-V3')
         # print(summary)
         return summary
 

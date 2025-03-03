@@ -18,6 +18,23 @@ class BiddingParser:
         self.html_text = html
 
     def parse_announcement(self):
+        """
+        解析HTML文本，提取表格数据。
+
+        该方法用于从HTML文本中提取招标公告中的表格数据。
+
+        参数：
+            无
+
+        返回值：
+            dict: 包含所有表格数据的字典。
+                  字典的结构如下：
+                  {
+                      "tables": list[list[str]]
+                  }
+                  其中，"tables" 键对应的值是一个列表，列表中的每个元素又是一个列表，
+                  表示一个表格的数据。每个表格数据列表中的元素是字符串，表示表格中的一个单元格的数据。
+        """
         soup = BeautifulSoup(self.html_text, 'html.parser')
         tables = soup.findAll('table') # 找到内容部分
 
@@ -43,6 +60,23 @@ class BiddingParser:
         }
 
     def parse_bid_price(self):
+        """
+        从解析后的公告中提取标的、标包和价格信息。
+
+        该方法用于从解析后的招标公告数据中提取标的、标包和价格信息。
+
+        参数：
+            无
+
+        返回值：
+            list[dict]: 包含标的、标包和价格信息的列表。
+                      列表中的每个元素是一个字典，字典的结构如下：
+                      {
+                          "subject": str,  # 标的名称
+                          "package": str,  # 标包名称
+                          "price": str     # 价格
+                      }
+        """
         announcement = self.parse_announcement()
         result = []
         for table in announcement['tables']:
@@ -103,12 +137,19 @@ class BiddingCSG:
         self.stop_crawl = True
 
     def search(self, keyword, max_page=65535, end_date=None, query_url=None):
-        """检索公告
-        ## 参数
-        - keyword: 检索关键字
-        - max_page: 最大爬取页数
-        - end_date: 要爬取公告的结束日期。取值为 None 或者 “2024-12-06” 格式的的日期字符串。
-        - query_url: 检索页面地址，默认为：https://www.bidding.csg.cn/dbsearch.jspx?q=
+        """
+        检索公告。
+
+        该方法用于在南方电网的招标网站上搜索招标公告。
+
+        参数：
+            keyword (str): 检索关键字。
+            max_page (int, 可选): 最大爬取页数，默认为 65535。
+            end_date (str, 可选): 要爬取公告的结束日期，格式为 "YYYY-MM-DD"，默认为 None。
+            query_url (str, 可选): 检索页面地址，默认为 "https://www.bidding.csg.cn/dbsearch.jspx?q="。
+
+        返回值：
+            None
         """
         self.stop_crawl = False
         self.end_date = end_date
@@ -164,6 +205,17 @@ class BiddingCSG:
             count += 1
 
     def next_page(self):
+        """
+        打开下一页。
+
+        该方法用于在招标网站上打开下一页搜索结果。
+
+        参数：
+            无
+
+        返回值：
+            None
+        """
         # 打开下一页
         self.page.click('text=下一页')
         self.page.wait_for_load_state('load')
@@ -171,6 +223,18 @@ class BiddingCSG:
         self.parse(self.page.content())
 
     def parse(self, content_text):
+        """
+        解析搜索结果页面的HTML内容，提取招标公告的信息。
+
+        该方法用于解析搜索结果页面的HTML内容，提取招标公告的类型、甲方、项目名称、日期和链接等信息，
+        并将信息存储在 self.bidding_list 列表中。
+
+        参数：
+            content_text (str): 包含搜索结果的HTML文本。
+
+        返回值：
+            str: 如果解析成功，则返回空字符串 ""。如果未找到正文内容或发生异常，则返回空字符串 ""。
+        """
         try:
             # 解析网页内容
             soup = BeautifulSoup(content_text, 'html.parser')
@@ -186,7 +250,7 @@ class BiddingCSG:
                     # print(f"类型：{links[0].text}, 招标方: {links[1].text}, 项目名称: {links[2].text}, 链接：https://www.bidding.csg.cn/{links[2].get('href')}")
                     create_date = item.find('span', class_='Black14 Gray')
                     # print(f"日期: {create_date.text}")
-                    if create_date.text < self.end_date:
+                    if create_date and create_date.text and self.end_date and create_date.text < self.end_date:
                         self.stop_crawl = True
                     else:
                         self.bidding_list.append({
@@ -204,7 +268,22 @@ class BiddingCSG:
             return ""
 
     def read_bidding_page(self, url):
-        """阅读标讯.
+        """
+        阅读标讯。
+
+        该方法用于读取单个招标公告的详细信息。
+
+        参数：
+            url (str): 招标公告的URL。
+
+        返回值：
+            dict: 包含招标公告的标题、日期和正文内容的字典。
+                  字典的结构如下：
+                  {
+                      "title": str,    # 招标公告的标题
+                      "date": str,     # 招标公告的日期
+                      "content": str   # 招标公告的正文内容
+                  }
         """
         try:
             self.page.goto(url, wait_until='load')
@@ -225,7 +304,16 @@ class BiddingCSG:
         self.random_wait()
 
     def filter(self, keyword):
-        """过滤出包含【投标报价】的公告. 例子: https://www.bidding.csg.cn/zbhxrgs/1200383714.jhtml
+        """
+        过滤出包含特定关键字的公告。
+
+        该方法用于从数据库中查找相关的招标公告，并过滤出包含特定关键字（例如 "投标报价"）的公告。
+
+        参数：
+            keyword (str): 过滤关键字。
+
+        返回值：
+            None
         """
         bidding_list = self.lookup(keyword)
         update_list = []
@@ -259,6 +347,17 @@ class BiddingCSG:
         self.update(update_list)
 
     def save_to_db(self):
+        """
+        将爬取的招标信息保存到数据库中。
+
+        该方法用于将爬取的招标信息保存到数据库中，避免重复爬取相同的信息。
+
+        参数：
+            无
+
+        返回值：
+            None
+        """
         # 插入数据的 SQL 语句
         insert_query = """
         INSERT INTO bidding_csg (type, part_a, project, create_date, url)
@@ -624,12 +723,18 @@ class BiddingCsgAnalyzer:
                 connection.close()
                 logger.info("数据库连接已关闭")
 
+def get_price_info(keyword: str):
+    """
+    下载招投标成交信息.
+    """
+    crawler = BiddingCSG()
+    pass
+
 if __name__ == '__main__':
     keyword = "南方电网数字平台科技"
-    csg = BiddingCsgAnalyzer()
-    # csg.search("南方电网数字平台科技")
+    csg = BiddingCSG()
+    csg.search("广东电网有限责任公司汕头供电局", 5)
     # csg.save_to_db()
     # csg.filter(keyword)
     # csg.analyze(keyword)
-    csg.output_as_csv()
-
+    # csg.output_as_csv()
