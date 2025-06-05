@@ -57,6 +57,7 @@ MODEL = ""
 # Provider Keys
 SILICONFLOW = "SILICONFLOW"
 DEEPSEEK = "DEEPSEEK"
+DOUBAO = "DOUBAO"
 
 PROVIDERS = {
     DEEPSEEK: {
@@ -70,6 +71,12 @@ PROVIDERS = {
         "MODEL": "deepseek-ai/DeepSeek-V3",
         "API_KEY": os.getenv("SILICONFLOW_API_KEY", None),
         "API_KEY_ENV": "SILICONFLOW_API_KEY"
+    },
+    DOUBAO: {
+        "BASE_URL": "https://ark.cn-beijing.volces.com/api/v3",
+        "MODEL": "doubao-1.5-pro-32k-250115",
+        "API_KEY": os.getenv("DOUBAO_API_KEY", None),
+        "API_KEY_ENV": "DOUBAO_API_KEY"
     },
 }
 
