@@ -14,7 +14,7 @@ from datetime import datetime
 import logging
 
 from ..models.database import (
-    DATABASE_SCHEMA, CrawlItem, LLMAnalysis, LLMSummary, 
+    DATABASE_SCHEMA, DATABASE_INDEXES, CrawlItem, LLMAnalysis, LLMSummary, 
     LLMSession, AnalysisError, CrawlStatus, AnalysisStatus
 )
 
@@ -85,7 +85,7 @@ class DatabaseManager:
             cursor.close()
     
     def _init_database(self):
-        """初始化数据库表结构"""
+        """初始化数据库表结构和索引"""
         try:
             with self.get_cursor(transaction=True) as cursor:
                 # 创建所有表
@@ -93,7 +93,13 @@ class DatabaseManager:
                     self.logger.info(f"创建表: {table_name}")
                     cursor.execute(schema)
                 
-                self.logger.info("数据库初始化完成")
+                # 创建所有索引
+                for index_group_name, index_list in DATABASE_INDEXES.items():
+                    self.logger.info(f"创建索引组: {index_group_name}")
+                    for index_sql in index_list:
+                        cursor.execute(index_sql)
+                
+                self.logger.info("数据库初始化完成（包含索引）")
                 
         except Exception as e:
             self.logger.error(f"数据库初始化失败: {e}")

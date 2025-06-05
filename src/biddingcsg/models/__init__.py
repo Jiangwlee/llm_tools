@@ -10,7 +10,7 @@ from .config import CrawlerConfig
 # 数据库模型
 from .database import (
     CrawlItem, LLMAnalysis, LLMSummary, LLMSession, AnalysisError,
-    CrawlStatus, AnalysisStatus, DATABASE_SCHEMA
+    CrawlStatus, AnalysisStatus, DATABASE_SCHEMA, DATABASE_INDEXES
 )
 
 # 暂时注释导入，等实现后再启用
@@ -23,7 +23,7 @@ __all__ = [
     
     # 数据库模型
     "CrawlItem", "LLMAnalysis", "LLMSummary", "LLMSession", "AnalysisError",
-    "CrawlStatus", "AnalysisStatus", "DATABASE_SCHEMA",
+    "CrawlStatus", "AnalysisStatus", "DATABASE_SCHEMA", "DATABASE_INDEXES",
     
     # 未来的模型
     # "BiddingNotice",

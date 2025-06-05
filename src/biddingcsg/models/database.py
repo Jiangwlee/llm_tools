@@ -312,4 +312,52 @@ DATABASE_SCHEMA = {
             FOREIGN KEY (session_id) REFERENCES llm_sessions (id) ON DELETE SET NULL
         )
     """
+}
+
+# 索引定义 - 用于优化查询性能
+DATABASE_INDEXES = {
+    # crawl_items 表的索引
+    "crawl_items_indexes": [
+        "CREATE INDEX IF NOT EXISTS idx_crawl_items_status ON crawl_items(status)",
+        "CREATE INDEX IF NOT EXISTS idx_crawl_items_page_type ON crawl_items(page_type)", 
+        "CREATE INDEX IF NOT EXISTS idx_crawl_items_timestamp ON crawl_items(crawl_timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_crawl_items_md5 ON crawl_items(content_md5)",
+        "CREATE INDEX IF NOT EXISTS idx_crawl_items_status_type ON crawl_items(status, page_type)"
+    ],
+    
+    # llm_analysis 表的索引
+    "llm_analysis_indexes": [
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_crawl_item ON llm_analysis(crawl_item_id)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_status ON llm_analysis(status)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_timestamp ON llm_analysis(analysis_timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_model ON llm_analysis(llm_model)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_project_name ON llm_analysis(project_name)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_project_code ON llm_analysis(project_code)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_tender_agency ON llm_analysis(tender_agency)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_analysis_bid_deadline ON llm_analysis(bid_deadline)"
+    ],
+    
+    # llm_summaries 表的索引  
+    "llm_summaries_indexes": [
+        "CREATE INDEX IF NOT EXISTS idx_llm_summaries_status ON llm_summaries(status)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_summaries_timestamp ON llm_summaries(summary_timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_summaries_model ON llm_summaries(llm_model)"
+    ],
+    
+    # llm_sessions 表的索引
+    "llm_sessions_indexes": [
+        "CREATE INDEX IF NOT EXISTS idx_llm_sessions_status ON llm_sessions(status)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_sessions_start_time ON llm_sessions(start_time)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_sessions_model ON llm_sessions(llm_model)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_sessions_name ON llm_sessions(session_name)"
+    ],
+    
+    # analysis_errors 表的索引
+    "analysis_errors_indexes": [
+        "CREATE INDEX IF NOT EXISTS idx_analysis_errors_crawl_item ON analysis_errors(crawl_item_id)",
+        "CREATE INDEX IF NOT EXISTS idx_analysis_errors_session ON analysis_errors(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_analysis_errors_type ON analysis_errors(error_type)",
+        "CREATE INDEX IF NOT EXISTS idx_analysis_errors_resolved ON analysis_errors(resolved)",
+        "CREATE INDEX IF NOT EXISTS idx_analysis_errors_timestamp ON analysis_errors(timestamp)"
+    ]
 } 
