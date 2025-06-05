@@ -5,17 +5,30 @@
 专注于解决实时状态更新和进程间通信问题。
 """
 
+# 存储服务
+from .storage import LocalStorageService
+from .database_manager import DatabaseManager
+from .database_storage import DatabaseStorageService
+
+# 爬虫服务
+from .crawler import BiddingCrawlerService
+
 # 暂时注释导入，等实现后再启用
 # from .llm import LLMService
-# from .crawler import CrawlerService  
-# from .database import DatabaseService
 # from .status import StatusService
 # from .messaging import MessageBus
 
 __all__ = [
+    # 存储服务
+    "LocalStorageService",
+    "DatabaseManager", 
+    "DatabaseStorageService",
+    
+    # 爬虫服务
+    "CrawlerService",
+    
+    # 未来的服务
     # "LLMService",
-    # "CrawlerService",
-    # "DatabaseService", 
     # "StatusService",
     # "MessageBus"
 ] 
