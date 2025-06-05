@@ -9,3 +9,5 @@ def get_logger(module: str = ""):
         logger.addHandler(FILE_HANDLER)
     logger.setLevel(logging.DEBUG)
     return logger
+
+logger = get_logger()

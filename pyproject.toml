@@ -25,7 +25,14 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "mysql-connector-python>=9.0.0"
+  "beautifulsoup4>=4.13.3",
+  "bs4>=0.0.2",
+  "mysql-connector-python>=9.0.0",
+  "ollama>=0.4.7",
+  "openai>=1.66.3",
+  "playwright>=1.48.0",
+  "requests>=2.32.3",
+  "streamlit>=1.40.1",
 ]
 
 [project.urls]

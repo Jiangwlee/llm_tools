@@ -12,12 +12,21 @@ from llm_tools.utils.number_util import is_number
 from llm_tools.tools.deepseek import deepseek_chat
 from llm_tools.tools.coze import coze_chat
 from llm_tools.tools.prompts import SYS_BIDDING_SUMMARY_PROMPT, SYS_PRICE_EXTRACTION_PROMPT
+from llm_tools.tools.ollama_chat import extract_bidding_info
 
 logger = get_logger()
 
 class LLMHelper:
     def __init__(self):
         raise TypeError("LLMHelper cannot be instantiated")
+    
+    def llm_basic_info_extract(user_prompt):
+        """调用本地ollama模型提取基本信息
+        """
+        try:
+            return extract_bidding_info(str(user_prompt))
+        except Exception as ex:
+            logger.error(f"llm_basic_info_extract 调用大模型出错, 错误信息: {ex}")
 
     def llm_summary(user_prompt):
         """调用大模型总结内容.
@@ -349,6 +358,9 @@ class BiddingCSG:
 
                 title_tag = soup.find('h1', class_='s-title')
                 item['project'] = title_tag.text
+
+                basic_info = LLMHelper.llm_basic_info_extract(content_div)
+                logger.info(f"Basic information: {basic_info}")
 
                 if bidding_type == 1 or bidding_type is None:
                     found_elements = content_div.find_all(lambda tag: '>投标报价<' in str(tag))
@@ -691,12 +703,12 @@ class BiddingCsgAnalyzer:
                 connection.close()
                 logger.info("数据库连接已关闭")
 
-def get_price_info(keyword: str, bidding_type=None):
+def get_price_info(keyword: str, bidding_type=None, max_page=65535):
     """
     下载招投标成交信息.
     """
     csg = BiddingCSG(verbose=True)
-    csg.search(keyword)
+    csg.search(keyword, max_page=max_page)
     csg.save_to_db()
     csg.filter(keyword, bidding_type)
     if bidding_type == 1:
@@ -720,12 +732,14 @@ import argparse
 USAGE = """
 # 下载历史中标成交价格
 
+
 python bidding_csg.py -d -n "汕头供电局" -t 1
 
 # 导出到 csv 文件
 
 python bidding_csg.py -q -n "汕头供电局" -t 1
 """
+
 
 if __name__ == '__main__':
     print(USAGE)
@@ -734,6 +748,7 @@ if __name__ == '__main__':
     parser.add_argument("-q", action="store_true", help="执行 query_price 来查询成交价格")
     parser.add_argument("-n", type=str, help="要查询的甲方单位名称", required=True)
     parser.add_argument("-t", type=int, choices=[1, 2], help="公告类型: 1=投标报价, 2=投标费率")
+    parser.add_argument("--max_page", type=int, default=65535, help="最大爬取页数")
 
     args = parser.parse_args()
 
@@ -748,7 +763,7 @@ if __name__ == '__main__':
 
     if args.d:
         logger.info("执行 get_price_info")
-        get_price_info(keyword, args.t)
+        get_price_info(keyword, args.t, args.max_page)
     if args.q:
         logger.info("执行 query_price")
         query_price(keyword, args.t)
