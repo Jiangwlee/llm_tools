@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# 文件路径规则
+
+1. always put test codes to 'tests' dir

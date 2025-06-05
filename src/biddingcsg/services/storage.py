@@ -106,6 +106,15 @@ class LocalStorageService:
         Returns:
             str: 生成的文件名
         """
+        # 页面类型前缀（如果有）
+        page_type = metadata.get('page_type', '')
+        page_type_prefix = ''
+        logger.info(f"页面类型: {page_type}")
+        if page_type:
+            # 清理页面类型，移除特殊字符
+            clean_page_type = page_type.replace('/', '_').replace('\\', '_').replace(':', '_')
+            page_type_prefix = f"{clean_page_type}_"
+        
         # 解析域名
         parsed_url = urlparse(url)
         domain = parsed_url.netloc.replace('www.', '').replace('.', '_')
@@ -121,7 +130,7 @@ class LocalStorageService:
         if project_name:
             project_name = f"_{project_name}"
         
-        filename = f"{domain}_{timestamp}_{url_hash}{project_name}.html"
+        filename = f"{page_type_prefix}{domain}_{timestamp}_{url_hash}{project_name}.html"
         return filename
     
     def save_html_content(self, url: str, content: str, metadata: Dict) -> CrawlResult:
@@ -377,6 +386,89 @@ class LocalStorageService:
             
         except Exception as e:
             logger.error(f"清理旧文件失败: {e}")
+    
+    def clear_all_cache(self) -> Dict[str, int]:
+        """
+        清空所有缓存数据，删除metadata和raw_html目录下的全部数据
+        
+        Returns:
+            Dict[str, int]: 清理统计信息，包含删除的文件数量
+        """
+        try:
+            stats = {
+                'html_files_deleted': 0,
+                'metadata_files_deleted': 0,
+                'directories_cleaned': 0
+            }
+            
+            # 打印调试信息
+            logger.info(f"开始清理缓存...")
+            logger.info(f"HTML目录: {self.html_dir}")
+            logger.info(f"元数据目录: {self.metadata_dir}")
+            logger.info(f"HTML目录存在: {self.html_dir.exists()}")
+            logger.info(f"元数据目录存在: {self.metadata_dir.exists()}")
+            
+            # 清理HTML文件目录
+            if self.html_dir.exists():
+                html_files = list(self.html_dir.rglob('*.html'))
+                logger.info(f"找到HTML文件 {len(html_files)} 个")
+                
+                for html_file in html_files:
+                    try:
+                        logger.info(f"正在删除HTML文件: {html_file}")
+                        html_file.unlink()
+                        stats['html_files_deleted'] += 1
+                        logger.info(f"成功删除HTML文件: {html_file}")
+                    except Exception as e:
+                        logger.warning(f"删除HTML文件失败 {html_file}: {e}")
+                
+                # 删除日期子目录（如果为空）
+                for date_dir in self.html_dir.iterdir():
+                    if date_dir.is_dir():
+                        try:
+                            # 检查目录是否为空
+                            if not any(date_dir.iterdir()):
+                                date_dir.rmdir()
+                                stats['directories_cleaned'] += 1
+                                logger.info(f"删除空目录: {date_dir}")
+                            else:
+                                logger.info(f"目录不为空，跳过: {date_dir}")
+                        except OSError as e:
+                            logger.warning(f"删除目录失败 {date_dir}: {e}")
+            else:
+                logger.warning(f"HTML目录不存在: {self.html_dir}")
+            
+            # 清理元数据文件目录
+            if self.metadata_dir.exists():
+                metadata_files = list(self.metadata_dir.glob('*.json'))
+                logger.info(f"找到元数据文件 {len(metadata_files)} 个")
+                
+                for metadata_file in metadata_files:
+                    try:
+                        logger.info(f"正在删除元数据文件: {metadata_file}")
+                        metadata_file.unlink()
+                        stats['metadata_files_deleted'] += 1
+                        logger.info(f"成功删除元数据文件: {metadata_file}")
+                    except Exception as e:
+                        logger.warning(f"删除元数据文件失败 {metadata_file}: {e}")
+            else:
+                logger.warning(f"元数据目录不存在: {self.metadata_dir}")
+            
+            # 清空爬取URL记录
+            old_count = len(self.crawled_urls)
+            self.crawled_urls.clear()
+            self.save_crawl_records()
+            logger.info(f"清空爬取URL记录: {old_count} -> {len(self.crawled_urls)}")
+            
+            logger.info(f"缓存清理完成: 删除HTML文件 {stats['html_files_deleted']} 个, "
+                       f"删除元数据文件 {stats['metadata_files_deleted']} 个, "
+                       f"清理目录 {stats['directories_cleaned']} 个")
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"清空缓存失败: {e}", exc_info=True)
+            return {'html_files_deleted': 0, 'metadata_files_deleted': 0, 'directories_cleaned': 0}
     
     def __del__(self):
         """析构函数，保存爬取记录"""

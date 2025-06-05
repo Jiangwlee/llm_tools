@@ -229,6 +229,12 @@ class BiddingCrawlerService:
             types_encoded = urllib.parse.quote(self.config.announcement_type)
             start_url = f"https://www.bidding.csg.cn/dbsearch.jspx?channelId=309&types={types_encoded}&org=&q="
             
+            # 记录公告类型信息
+            if self.config.announcement_type == "":
+                self._log("📋 公告类型: 全部类型 (所有公告)")
+            else:
+                self._log(f"📋 公告类型: {self.config.announcement_type}")
+            
             self._log(f"🔍 访问搜索页面: {start_url}")
             self.page.goto(start_url, wait_until='load')
             
@@ -299,7 +305,7 @@ class BiddingCrawlerService:
                                          f"正在处理第 {self.current_page_num} 页")
                 
                 # 解析当前页面
-                page_results = self._parse_current_page()
+                page_results = self._parse_project_list()
                 
                 # 保存结果
                 for result in page_results:
@@ -329,11 +335,10 @@ class BiddingCrawlerService:
             finally:
                 self.current_page_num += 1
     
-    def _parse_current_page(self) -> List[CrawlResult]:
-        """解析当前页面内容"""
+    def _parse_project_list(self) -> List[CrawlResult]:
+        """解析列表页面上的项目条目"""
         try:
-            content = self.page.content()
-            soup = BeautifulSoup(content, 'html.parser')
+            soup = BeautifulSoup(self.page.content(), 'html.parser')
             
             # 查找内容列表
             content_div = soup.find('div', class_='List2')
@@ -391,14 +396,15 @@ class BiddingCrawlerService:
             # 获取详细内容
             detail_content = self._get_detail_content(url)
             
-            # 构建元数据
+            # 构建元数据（页面类型在_get_detail_content中已经设置）
             metadata = {
                 'title': detail_content.get('title', project_name),
                 'content_text': detail_content.get('content', ''),
                 'date': detail_content.get('date', date_str),
                 'announcement_type': announcement_type,
                 'company': company,
-                'project_name': project_name
+                'project_name': project_name,
+                'page_type': getattr(self, 'page_type', None)  # 从详细页面获取的页面类型
             }
             
             # 保存到本地文件
@@ -419,12 +425,86 @@ class BiddingCrawlerService:
         try:
             self._log(f"🔗 访问详细页面: {url}")
             
-            # 访问详细页面
-            self.page.goto(url, wait_until='load')
-            self.page.locator('div.s-content').wait_for(state='visible')
+            # 检查浏览器和页面是否仍然有效
+            if not self.browser or not self.page:
+                self._log("❌ 浏览器或页面已关闭，跳过详细内容获取")
+                return {
+                    'title': '',
+                    'date': '',
+                    'content': '',
+                    'raw_html': ''
+                }
+            
+            # 检查页面是否已被关闭
+            try:
+                # 尝试获取页面标题来测试页面是否仍然有效
+                _ = self.page.title()
+            except Exception:
+                self._log("❌ 页面已被关闭，跳过详细内容获取")
+                return {
+                    'title': '',
+                    'date': '',
+                    'content': '',
+                    'raw_html': ''
+                }
+            
+            # 访问详细页面，增加重试机制
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # 设置较短的超时时间，避免长时间等待
+                    self.page.goto(url, wait_until='load', timeout=15000)  # 15秒超时
+                    
+                    # 等待内容加载，使用更宽松的选择器
+                    try:
+                        self.page.locator('div.s-content').wait_for(state='visible', timeout=10000)
+                    except:
+                        # 如果找不到s-content，尝试等待其他可能的内容容器
+                        try:
+                            self.page.locator('div.Content').wait_for(state='visible', timeout=5000)
+                        except:
+                            # 如果都找不到，继续处理，可能页面结构不同
+                            pass
+                    
+                    break  # 成功访问，退出重试循环
+                    
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        self._log(f"⚠️ 访问详细页面失败（尝试 {attempt + 1}/{max_retries}）: {e}")
+                        time.sleep(1)  # 短暂等待后重试
+                        continue
+                    else:
+                        raise e
             
             # 解析页面内容
-            soup = BeautifulSoup(self.page.content(), 'html.parser')
+            try:
+                soup = BeautifulSoup(self.page.content(), 'html.parser')
+            except Exception as e:
+                self._log(f"❌ 解析页面内容失败: {e}")
+                return {
+                    'title': '',
+                    'date': '',
+                    'content': '',
+                    'raw_html': ''
+                }
+            
+            # 查找页面类型（在详细页面中检测）
+            page_type = None
+            breadcrumb_div = soup.find('div', class_='W1200 Center Top18')
+            if breadcrumb_div:
+                links = breadcrumb_div.find_all('a')
+                for link in links:
+                    text = link.text.strip()
+                    if text in ['公示公告', '招标公告', '非招标公告']:
+                        page_type = text
+                        break
+            
+            # 如果找到页面类型，将其保存
+            if page_type:
+                self._log(f"📄 页面类型: {page_type}")
+                self.page_type = page_type
+            else:
+                self._log("⚠️ 未找到页面类型信息")
             
             # 提取标题
             title_tag = soup.find('h1', class_='s-title')

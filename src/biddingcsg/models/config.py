@@ -37,11 +37,6 @@ class CrawlerConfig:
         if self.max_pages <= 0:
             raise ValueError("最大页数必须大于0")
         
-        # 验证公告类型
-        valid_types = ["服务", "招标公告", "公示公告"]
-        if self.announcement_type not in valid_types:
-            raise ValueError(f"公告类型必须是: {', '.join(valid_types)}")
-        
         # 验证日期格式
         if self.earliest_date:
             try:
