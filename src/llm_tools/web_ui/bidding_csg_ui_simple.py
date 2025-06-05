@@ -4,6 +4,8 @@ import os
 from datetime import datetime, date
 import pandas as pd
 import time
+import threading
+from queue import Queue, Empty
 
 # 添加项目根目录到 Python 路径
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
@@ -16,6 +18,136 @@ from src.llm_tools.logger import get_logger
 
 # 获取日志记录器
 logger = get_logger()
+
+# 初始化会话状态
+if 'page_url_status' not in st.session_state:
+    st.session_state.page_url_status = "未开始"
+if 'llm_inference_status' not in st.session_state:
+    st.session_state.llm_inference_status = "未开始"
+if 'status_queue' not in st.session_state:
+    st.session_state.status_queue = Queue()
+if 'llm_queue' not in st.session_state:
+    st.session_state.llm_queue = Queue()
+
+
+def show_status_panels():
+    """显示状态面板"""
+    st.markdown("### 📊 实时状态监控")
+    
+    # 自动刷新容器
+    status_container = st.container()
+    
+    with status_container:
+        col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🌐 页面访问状态")
+        page_status_container = st.empty()
+        
+        # 检查是否有新的页面状态更新
+        try:
+            while True:
+                status_update = st.session_state.status_queue.get_nowait()
+                st.session_state.page_url_status = status_update
+        except Empty:
+            pass
+        
+        # 显示当前页面状态
+        if st.session_state.page_url_status == "未开始":
+            page_status_container.info("🟡 等待开始...")
+        elif st.session_state.page_url_status.startswith("http"):
+            # 缩短显示的URL长度
+            url_display = st.session_state.page_url_status
+            if len(url_display) > 50:
+                url_display = url_display[:47] + "..."
+            page_status_container.success(f"🟢 访问中:\n`{url_display}`")
+        elif "完成" in st.session_state.page_url_status:
+            page_status_container.success(f"✅ {st.session_state.page_url_status}")
+        elif "错误" in st.session_state.page_url_status or "异常" in st.session_state.page_url_status:
+            page_status_container.error(f"❌ {st.session_state.page_url_status}")
+        elif "失败" in st.session_state.page_url_status:
+            page_status_container.warning(f"⚠️ {st.session_state.page_url_status}")
+        else:
+            page_status_container.info(f"🔄 {st.session_state.page_url_status}")
+    
+    with col2:
+        st.markdown("#### 🤖 AI推理状态")
+        llm_status_container = st.empty()
+        
+        # 检查是否有新的LLM状态更新
+        try:
+            while True:
+                llm_update = st.session_state.llm_queue.get_nowait()
+                st.session_state.llm_inference_status = llm_update
+        except Empty:
+            pass
+        
+        # 显示当前LLM状态
+        status = st.session_state.llm_inference_status
+        if status == "未开始":
+            llm_status_container.info("🟡 等待推理...")
+        elif any(word in status for word in ["推理中", "分析", "处理中", "初始化", "提取", "模型", "AI", "💭", "📝", "🚀"]):
+            llm_status_container.warning(f"🟠 {status}")
+        elif any(word in status for word in ["完成", "成功", "✅"]):
+            llm_status_container.success(f"✅ {status}")
+        elif any(word in status for word in ["错误", "失败", "异常", "❌"]):
+            llm_status_container.error(f"❌ {status}")
+        elif "中断" in status or "⚠️" in status:
+            llm_status_container.warning(f"⚠️ {status}")
+        else:
+            llm_status_container.info(f"🔄 {status}")
+    
+    # 状态控制按钮
+    col_a, col_b, col_c = st.columns(3)
+    
+    with col_a:
+        if st.button("🔄 刷新状态", help="手动刷新状态显示"):
+            st.rerun()
+    
+    with col_b:
+        if st.button("🧹 清空状态", help="清空当前状态显示"):
+            st.session_state.page_url_status = "未开始"
+            st.session_state.llm_inference_status = "未开始"
+            # 清空队列
+            while not st.session_state.status_queue.empty():
+                try:
+                    st.session_state.status_queue.get_nowait()
+                except Empty:
+                    break
+            while not st.session_state.llm_queue.empty():
+                try:
+                    st.session_state.llm_queue.get_nowait()
+                except Empty:
+                    break
+            st.rerun()
+    
+    with col_c:
+        # 显示调试信息
+        if st.checkbox("显示调试信息"):
+            st.caption(f"页面状态: `{st.session_state.page_url_status}`")
+            st.caption(f"LLM状态: `{st.session_state.llm_inference_status}`")
+    
+    st.markdown("---")
+
+
+def update_page_status(message):
+    """更新页面访问状态"""
+    try:
+        st.session_state.status_queue.put(message)
+        st.session_state.page_url_status = message  # 直接更新状态
+        logger.info(f"页面状态更新: {message}")
+    except Exception as e:
+        logger.error(f"更新页面状态失败: {e}")
+
+
+def update_llm_status(message):
+    """更新LLM推理状态"""
+    try:
+        st.session_state.llm_queue.put(message)
+        st.session_state.llm_inference_status = message  # 直接更新状态
+        logger.info(f"LLM状态更新: {message}")
+    except Exception as e:
+        logger.error(f"更新LLM状态失败: {e}")
 
 
 def main():
@@ -64,6 +196,9 @@ def show_download_page(config_manager):
     else:
         st.warning(f"⚠️ 当前模型未配置API密钥: {current_model['display_name']}")
     
+    # 显示状态面板
+    show_status_panels()
+    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -101,16 +236,113 @@ def show_download_page(config_manager):
         )
     
     # 下载按钮
-    if st.button("🚀 开始下载数据", type="primary", use_container_width=True):
-        if not keyword:
-            st.error("请输入搜索关键字！")
-            return
+    col_btn1, col_btn2 = st.columns([3, 1])
+    
+    with col_btn1:
+        if st.button("🚀 开始下载数据", type="primary", use_container_width=True):
+            if not keyword:
+                st.error("请输入搜索关键字！")
+                return
+            
+            download_data(keyword, bidding_type, max_page, end_date)
+    
+    with col_btn2:
+        if st.button("🧪 测试AI", use_container_width=True):
+            # 测试实时LLM streaming
+            test_llm_streaming()
+
+
+def test_llm_streaming():
+    """测试LLM实时streaming功能"""
+    st.markdown("### 🧪 AI实时推理测试")
+    
+    # 创建状态显示容器
+    test_status_area = st.empty()
+    test_progress_area = st.empty()
+    test_result_area = st.empty()
+    
+    try:
+        from src.llm_tools.tools.bidding_csg import LLMHelper
         
-        download_data(keyword, bidding_type, max_page, end_date)
+        # 状态回调函数
+        def test_status_callback(message):
+            update_llm_status(message)
+            with test_status_area.container():
+                st.info(f"🤖 AI状态: {message}")
+        
+        # 设置全局回调
+        LLMHelper.set_global_status_callback(test_status_callback)
+        
+        update_page_status("🧪 开始AI测试...")
+        update_llm_status("🚀 准备AI测试...")
+        
+        with test_progress_area.container():
+            progress = st.progress(0)
+            progress.progress(20)
+        
+        # 测试基本信息提取
+        test_text = "南方电网广东汕头供电局2024年变电站设备检修项目招标公告，预算1000万元，工期6个月，投标截止时间2024年12月31日。"
+        
+        with test_status_area.container():
+            st.info("🔍 测试基本信息提取...")
+        
+        result1 = LLMHelper.llm_basic_info_extract(test_text)
+        
+        with test_progress_area.container():
+            progress.progress(60)
+        
+        # 测试内容总结
+        with test_status_area.container():
+            st.info("📝 测试内容总结...")
+        
+        result2 = LLMHelper.llm_summary("这是一个电力设备检修项目的招标，包含变压器检修、开关设备检修等内容。项目预算充足，技术要求较高。")
+        
+        with test_progress_area.container():
+            progress.progress(100)
+        
+        # 显示结果
+        with test_result_area.container():
+            st.success("🎉 AI测试完成！")
+            
+            if result1:
+                st.markdown("**基本信息提取结果：**")
+                st.text_area("结果1", result1, height=100)
+            
+            if result2:
+                st.markdown("**内容总结结果：**")
+                st.text_area("结果2", result2, height=100)
+        
+        # 更新最终状态
+        update_page_status("✅ AI测试完成")
+        update_llm_status("✅ 所有测试通过")
+        
+    except Exception as e:
+        with test_result_area.container():
+            st.error(f"❌ AI测试失败: {str(e)}")
+        
+        update_page_status("❌ AI测试失败")
+        update_llm_status("❌ 测试异常")
+        
+    finally:
+        # 清除回调
+        try:
+            LLMHelper.clear_global_status_callback()
+        except:
+            pass
+        
+        # 3秒后清除测试界面
+        import time
+        time.sleep(3)
+        test_status_area.empty()
+        test_progress_area.empty()
 
 
 def download_data(keyword, bidding_type, max_page, end_date):
     """执行数据下载"""
+    # 重置状态
+    update_page_status("初始化中...")
+    update_llm_status("等待推理...")
+    
     # 格式化结束日期
     end_date_str = end_date.strftime("%Y-%m-%d") if end_date else None
     
@@ -138,30 +370,91 @@ def download_data(keyword, bidding_type, max_page, end_date):
     
     try:
         status_container.info("🔄 正在初始化下载任务...")
+        update_page_status("启动浏览器中...")
         
         # 显示进度条
         progress_bar = progress_container.progress(0)
         
         # 调用安全的下载函数
         status_container.info("🌐 正在启动浏览器和连接网站...")
+        update_page_status("https://www.bidding.csg.cn/ - 连接中...")
         
-        # 模拟进度更新
+        # 模拟进度更新并更新状态
         progress_steps = [
-            (20, "🔍 正在搜索招投标公告..."),
-            (40, "📄 正在解析页面内容..."),
-            (60, "💾 正在保存数据到数据库..."),
-            (80, "🔍 正在分析中标信息..."),
-            (90, "⏳ 即将完成...")
+            (20, "🔍 正在搜索招投标公告...", f"https://www.bidding.csg.cn/dbsearch.jspx?q={keyword}", "搜索页面解析中..."),
+            (40, "📄 正在解析页面内容...", f"第1页 - 解析中", "提取基本信息推理中..."),
+            (60, "💾 正在保存数据到数据库...", f"第{min(2, max_page)}页 - 解析中", "内容总结推理中..."),
+            (80, "🔍 正在分析中标信息...", f"第{min(3, max_page)}页 - 解析中", "价格信息提取推理中..."),
+            (90, "⏳ 即将完成...", "数据处理完成", "推理任务完成")
         ]
         
-        for progress, message in progress_steps:
+        for progress, message, page_status, llm_status in progress_steps:
             progress_bar.progress(progress)
             status_container.info(message)
+            update_page_status(page_status)
+            update_llm_status(llm_status)
             time.sleep(1)
         
         # 执行实际的下载任务
         status_container.info("🚀 正在执行数据下载...")
-        result = safe_get_price_info(keyword, bidding_type, max_page, end_date_str)
+        update_page_status("🚀 准备启动...")
+        update_llm_status("⏳ 等待开始...")
+        
+        # 先进行AI功能测试，确保AI能正常工作
+        st.info("🧪 首先测试AI功能连通性...")
+        
+        try:
+            from src.llm_tools.tools.bidding_csg import LLMHelper
+            
+            # 设置临时状态回调
+            def temp_callback(message):
+                update_llm_status(message)
+                status_container.info(f"🤖 {message}")
+            
+            LLMHelper.set_global_status_callback(temp_callback)
+            
+            # 简单测试
+            test_result = LLMHelper.llm_summary("测试AI连通性")
+            
+            if test_result:
+                st.success("✅ AI功能测试通过，开始数据下载...")
+                update_llm_status("✅ AI连通性正常")
+            else:
+                st.warning("⚠️ AI功能可能存在问题，但继续执行下载...")
+                update_llm_status("⚠️ AI连通性异常")
+                
+            LLMHelper.clear_global_status_callback()
+            
+        except Exception as ai_error:
+            st.warning(f"⚠️ AI测试失败: {ai_error}，继续执行下载...")
+            update_llm_status(f"❌ AI测试失败: {str(ai_error)}")
+        
+        # 创建实时状态回调
+        def process_status_callback(status_type, message):
+            """处理进程间状态更新"""
+            if status_type == "page":
+                update_page_status(message)
+                status_container.info(f"🌐 {message}")
+            elif status_type == "llm":
+                update_llm_status(message)
+                status_container.info(f"🤖 {message}")
+        
+        # 更新状态为准备下载
+        update_page_status("🌐 启动浏览器...")
+        update_llm_status("🚀 初始化AI模型...")
+        
+        try:
+            result = safe_get_price_info(
+                keyword, 
+                bidding_type, 
+                max_page, 
+                end_date_str, 
+                status_callback=process_status_callback
+            )
+        except Exception as e:
+            update_page_status(f"❌ 下载异常: {str(e)}")
+            update_llm_status("❌ 处理中断")
+            result = {"success": False, "message": f"下载过程中出现错误: {str(e)}"}
         
         progress_bar.progress(100)
         
@@ -170,6 +463,8 @@ def download_data(keyword, bidding_type, max_page, end_date):
         
         if result.get("success", False):
             status_container.success("✅ " + result["message"])
+            update_page_status("下载完成")
+            update_llm_status("推理完成")
             st.balloons()
             
             # 显示下一步操作建议
@@ -183,11 +478,15 @@ def download_data(keyword, bidding_type, max_page, end_date):
             """)
         else:
             status_container.error("❌ " + result.get("message", "未知错误"))
+            update_page_status("下载失败")
+            update_llm_status("推理中断")
             show_troubleshooting()
             
     except Exception as e:
         progress_container.empty()
         status_container.error(f"❌ 系统错误: {str(e)}")
+        update_page_status(f"错误: {str(e)}")
+        update_llm_status("推理失败")
         
         # 显示详细错误信息
         with st.expander("🐛 详细错误信息"):
@@ -242,6 +541,9 @@ def show_query_page(config_manager):
     else:
         st.warning(f"⚠️ 当前模型未配置API密钥: {current_model['display_name']}")
     
+    # 显示状态面板
+    show_status_panels()
+    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -270,17 +572,39 @@ def show_query_page(config_manager):
 
 def query_data(keyword, bidding_type, config_manager):
     """执行数据查询"""
+    # 重置状态
+    update_page_status("查询初始化...")
+    update_llm_status("准备数据分析...")
+    
     with st.spinner("正在查询数据..."):
         try:
+            # 设置全局LLM状态回调
+            from src.llm_tools.tools.bidding_csg import LLMHelper
+            
+            def llm_status_callback(status_message):
+                update_llm_status(status_message)
+            
+            LLMHelper.set_global_status_callback(llm_status_callback)
+            
             # 调用安全的查询函数
-            result = safe_query_price(keyword, bidding_type)
+            update_page_status("正在查询数据库...")
+            update_llm_status("分析查询参数...")
+            
+            try:
+                result = safe_query_price(keyword, bidding_type)
+            finally:
+                # 清除全局回调
+                LLMHelper.clear_global_status_callback()
             
             if result.get("success", False):
                 st.success("✅ " + result["message"])
+                update_page_status("数据查询成功")
+                update_llm_status("数据分析完成")
                 
                 # 读取生成的 CSV 文件
                 csv_file = "bidding_csg.csv"
                 if os.path.exists(csv_file):
+                    update_page_status("读取CSV文件...")
                     df = pd.read_csv(csv_file, encoding='utf-8')
                     
                     # 应用结果限制配置
@@ -318,15 +642,23 @@ def query_data(keyword, bidding_type, config_manager):
                     # 数据可视化（如果启用了图表显示）
                     if (config_manager.get("query_settings.show_charts", True) and 
                         bidding_type == 1 and '中标价格(万元)' in df.columns):
+                        update_llm_status("生成数据图表...")
                         show_price_analysis(df_display)
+                        update_llm_status("图表生成完成")
                         
                 else:
                     st.warning("未找到查询结果文件，请先执行数据下载。")
+                    update_page_status("未找到CSV文件")
+                    update_llm_status("无数据可分析")
             else:
                 st.error("❌ " + result.get("message", "查询失败"))
+                update_page_status("查询失败")
+                update_llm_status("分析失败")
                 
         except Exception as e:
             st.error(f"❌ 查询过程中出现错误: {str(e)}")
+            update_page_status(f"查询异常: {str(e)}")
+            update_llm_status("分析异常")
 
 
 def show_price_analysis(df):

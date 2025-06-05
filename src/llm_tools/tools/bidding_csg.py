@@ -14,6 +14,7 @@ from llm_tools.tools.coze import coze_chat
 from llm_tools.tools.prompts import SYS_BIDDING_SUMMARY_PROMPT, SYS_PRICE_EXTRACTION_PROMPT
 from llm_tools.tools.ollama_chat import extract_bidding_info
 from llm_tools import config
+from dataclasses import dataclass
 
 logger = get_logger()
 
@@ -68,7 +69,7 @@ class UnifiedLLMClient:
         
         return "DEEPSEEK"  # 兜底默认值
     
-    def chat(self, user_prompt, system_prompt="你是人工智能助手", temperature=0.3, max_tokens=2000, timeout=30):
+    def chat(self, user_prompt, system_prompt="你是人工智能助手", temperature=0.3, max_tokens=2000, timeout=30, status_callback=None):
         """
         统一的聊天接口
         
@@ -78,18 +79,25 @@ class UnifiedLLMClient:
             temperature: 生成温度
             max_tokens: 最大生成长度
             timeout: 超时时间
+            status_callback: 状态更新回调函数，用于实时显示streaming内容
             
         Returns:
             str: 模型回复内容
         """
         if not self.client:
             logger.error(f"模型 {self.provider} 客户端未初始化，请检查配置")
+            if status_callback:
+                status_callback(f"❌ 模型 {self.provider} 客户端未初始化")
             return None
         
         try:
             logger.info(f"调用 {self.provider} 模型: {self.model}")
+            if status_callback:
+                status_callback(f"🚀 开始调用 {self.provider} 模型...")
             
             full_content = ""
+            chunk_count = 0
+            
             for chunk in self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -104,18 +112,37 @@ class UnifiedLLMClient:
                 if chunk.choices and chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     full_content += content
+                    chunk_count += 1
+                    
+                    # 实时更新状态显示
+                    if status_callback:
+                        # 显示最新的内容片段，限制长度避免界面混乱
+                        display_content = content.strip()
+                        if len(display_content) > 50:
+                            display_content = display_content[:47] + "..."
+                        
+                        # 显示累计内容长度和当前片段
+                        # status_callback(f"💭 {self.provider} 推理中...\n块{chunk_count}: `{display_content}`\n总长度: {len(full_content)}字符")
+                        status_callback(f"💭 {full_content}")
+                    
                     logger.info(f"收到模型 {self.provider} 的响应片段: {content}")
             
             if full_content:
                 content = full_content.strip()
                 logger.info(f"模型 {self.provider} 调用成功，返回内容长度: {len(content)}")
+                if status_callback:
+                    status_callback(f"✅ {self.provider} 推理完成\n总长度: {len(content)}字符，共{chunk_count}个块")
                 return content
             else:
                 logger.warning(f"模型 {self.provider} 返回空内容")
+                if status_callback:
+                    status_callback(f"⚠️ {self.provider} 返回空内容")
                 return None
                 
         except Exception as e:
             logger.error(f"调用模型 {self.provider} 失败: {e}")
+            if status_callback:
+                status_callback(f"❌ {self.provider} 调用失败: {str(e)}")
             return None
     
     def is_available(self):
@@ -126,6 +153,7 @@ class LLMHelper:
     """LLM助手类，提供统一的模型调用接口"""
     
     _llm_client = None
+    _global_status_callback = None
     
     @classmethod
     def get_llm_client(cls):
@@ -139,13 +167,26 @@ class LLMHelper:
         """设置LLM客户端配置"""
         cls._llm_client = UnifiedLLMClient(provider, model, api_key, base_url)
     
+    @classmethod
+    def set_global_status_callback(cls, callback):
+        """设置全局状态回调函数"""
+        cls._global_status_callback = callback
+        logger.info("已设置全局LLM状态回调")
+    
+    @classmethod
+    def clear_global_status_callback(cls):
+        """清除全局状态回调函数"""
+        cls._global_status_callback = None
+        logger.info("已清除全局LLM状态回调")
+    
     @staticmethod
-    def llm_basic_info_extract(user_prompt):
+    def llm_basic_info_extract(user_prompt, status_callback=None):
         """
         调用模型提取基本信息
         
         Args:
             user_prompt: 用户输入的提示词
+            status_callback: 状态更新回调函数
             
         Returns:
             str: 提取的基本信息
@@ -154,32 +195,44 @@ class LLMHelper:
             # 确保LLM客户端已初始化
             LLMHelper.ensure_initialized()
             
+            # 使用传入的回调或全局回调
+            callback = status_callback or LLMHelper._global_status_callback
+            
+            if callback:
+                callback("🔍 准备提取基本信息...")
+            
             # 优先尝试使用配置的统一模型
             llm_client = LLMHelper.get_llm_client()
             if llm_client.is_available():
                 result = llm_client.chat(
                     user_prompt=str(user_prompt),
                     system_prompt=SYS_BIDDING_SUMMARY_PROMPT,
-                    temperature=0.1
+                    temperature=0.1,
+                    status_callback=callback
                 )
                 if result:
                     return result
             
             # 备选方案：使用本地ollama模型
             logger.info("统一模型不可用，尝试使用本地ollama模型")
+            if callback:
+                callback("🔄 使用本地ollama模型...")
             return extract_bidding_info(str(user_prompt))
             
         except Exception as ex:
             logger.error(f"llm_basic_info_extract 调用模型出错, 错误信息: {ex}")
+            if callback:
+                callback(f"❌ 基本信息提取失败: {str(ex)}")
             return None
 
     @staticmethod
-    def llm_summary(user_prompt):
+    def llm_summary(user_prompt, status_callback=None):
         """
         调用模型总结内容
         
         Args:
             user_prompt: 用户输入的提示词
+            status_callback: 状态更新回调函数
             
         Returns:
             str: 总结内容
@@ -188,28 +241,40 @@ class LLMHelper:
             # 确保LLM客户端已初始化
             LLMHelper.ensure_initialized()
             
+            # 使用传入的回调或全局回调
+            callback = status_callback or LLMHelper._global_status_callback
+            
+            if callback:
+                callback("📝 准备内容总结...")
+            
             llm_client = LLMHelper.get_llm_client()
             if llm_client.is_available():
                 return llm_client.chat(
                     user_prompt=str(user_prompt),
                     system_prompt=SYS_BIDDING_SUMMARY_PROMPT,
-                    temperature=0.1
+                    temperature=0.1,
+                    status_callback=callback
                 )
             else:
                 logger.warning("统一模型不可用，无法执行内容总结")
+                if callback:
+                    callback("⚠️ 统一模型不可用，无法执行内容总结")
                 return None
                 
         except Exception as ex:
             logger.warning(f"llm_summary 调用模型出错, 错误信息: {ex}")
+            if callback:
+                callback(f"❌ 内容总结失败: {str(ex)}")
             return None
 
     @staticmethod
-    def llm_price_extract(user_prompt):
+    def llm_price_extract(user_prompt, status_callback=None):
         """
         调用模型提取价格信息
         
         Args:
             user_prompt: 用户输入的提示词
+            status_callback: 状态更新回调函数
             
         Returns:
             str: 提取的价格信息
@@ -218,19 +283,30 @@ class LLMHelper:
             # 确保LLM客户端已初始化
             LLMHelper.ensure_initialized()
             
+            # 使用传入的回调或全局回调
+            callback = status_callback or LLMHelper._global_status_callback
+            
+            if callback:
+                callback("💰 准备价格信息提取...")
+            
             llm_client = LLMHelper.get_llm_client()
             if llm_client.is_available():
                 return llm_client.chat(
                     user_prompt=str(user_prompt),
                     system_prompt=SYS_PRICE_EXTRACTION_PROMPT,
-                    temperature=0.1
+                    temperature=0.1,
+                    status_callback=callback
                 )
             else:
                 logger.warning("统一模型不可用，无法执行价格提取")
+                if callback:
+                    callback("⚠️ 统一模型不可用，无法执行价格提取")
                 return None
                 
         except Exception as ex:
             logger.warning(f"llm_price_extract 调用模型出错, 错误信息: {ex}")
+            if callback:
+                callback(f"❌ 价格提取失败: {str(ex)}")
             return None
     
     @staticmethod
