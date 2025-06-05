@@ -11,6 +11,11 @@ sys.path.insert(0, project_root)
 
 from src.llm_tools.web_ui.bidding_csg_wrapper import safe_get_price_info, safe_query_price
 from src.llm_tools.web_ui.system_check import show_system_status, show_troubleshooting_guide
+from src.llm_tools.web_ui.config_manager import get_config_manager, show_model_selector, show_advanced_settings
+from src.llm_tools.logger import get_logger
+
+# 获取日志记录器
+logger = get_logger()
 
 
 def main():
@@ -19,6 +24,9 @@ def main():
         page_icon="📊",
         layout="wide"
     )
+    
+    # 获取配置管理器
+    config_manager = get_config_manager()
     
     st.title("📊 南方电网招投标数据查询系统")
     st.markdown("---")
@@ -30,18 +38,31 @@ def main():
         ["数据下载", "价格查询", "系统说明"]
     )
     
+    # 显示模型选择器
+    show_model_selector(config_manager)
+    
+    # 显示高级设置
+    show_advanced_settings(config_manager)
+    
     if page == "数据下载":
-        show_download_page()
+        show_download_page(config_manager)
     elif page == "价格查询":
-        show_query_page()
+        show_query_page(config_manager)
     else:
-        show_help_page()
+        show_help_page(config_manager)
 
 
-def show_download_page():
+def show_download_page(config_manager):
     """显示数据下载页面"""
     st.header("🔍 招投标数据下载")
     st.markdown("从南方电网招投标网站下载招投标公告和成交信息")
+    
+    # 显示当前使用的模型
+    current_model = config_manager.get_current_model_info()
+    if current_model["available"]:
+        st.info(f"🤖 当前使用模型: {current_model['display_name']}")
+    else:
+        st.warning(f"⚠️ 当前模型未配置API密钥: {current_model['display_name']}")
     
     col1, col2 = st.columns(2)
     
@@ -52,19 +73,24 @@ def show_download_page():
             help="输入甲方单位名称进行搜索"
         )
         
+        # 从配置中获取默认公告类型
+        default_bidding_type = config_manager.get("download_settings.default_bidding_type")
         bidding_type = st.selectbox(
             "公告类型",
             options=[None, 1, 2],
             format_func=lambda x: "全部类型" if x is None else ("投标报价" if x == 1 else "投标费率"),
+            index=0 if default_bidding_type is None else (1 if default_bidding_type == 1 else 2),
             help="选择要下载的公告类型"
         )
     
     with col2:
+        # 从配置中获取默认最大页数
+        default_max_pages = config_manager.get("download_settings.default_max_pages", 5)
         max_page = st.number_input(
             "最大爬取页数",
             min_value=1,
             max_value=100,
-            value=5,
+            value=default_max_pages,
             help="限制爬取的最大页数，避免过度消耗资源"
         )
         
@@ -204,10 +230,17 @@ def show_troubleshooting():
         """)
 
 
-def show_query_page():
+def show_query_page(config_manager):
     """显示价格查询页面"""
     st.header("💰 成交价格查询")
     st.markdown("查询已下载的招投标成交价格信息")
+    
+    # 显示当前使用的模型
+    current_model = config_manager.get_current_model_info()
+    if current_model["available"]:
+        st.info(f"🤖 当前使用模型: {current_model['display_name']}")
+    else:
+        st.warning(f"⚠️ 当前模型未配置API密钥: {current_model['display_name']}")
     
     col1, col2 = st.columns(2)
     
@@ -232,10 +265,10 @@ def show_query_page():
             st.error("请输入查询关键字！")
             return
         
-        query_data(keyword, bidding_type)
+        query_data(keyword, bidding_type, config_manager)
 
 
-def query_data(keyword, bidding_type):
+def query_data(keyword, bidding_type, config_manager):
     """执行数据查询"""
     with st.spinner("正在查询数据..."):
         try:
@@ -250,6 +283,14 @@ def query_data(keyword, bidding_type):
                 if os.path.exists(csv_file):
                     df = pd.read_csv(csv_file, encoding='utf-8')
                     
+                    # 应用结果限制配置
+                    result_limit = config_manager.get("query_settings.result_limit", 100)
+                    if len(df) > result_limit:
+                        st.warning(f"⚠️ 查询结果超过设置的限制({result_limit}条)，仅显示前{result_limit}条记录")
+                        df_display = df.head(result_limit)
+                    else:
+                        df_display = df
+                    
                     # 显示数据统计
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -263,7 +304,7 @@ def query_data(keyword, bidding_type):
                     
                     # 显示数据表格
                     st.subheader("📋 查询结果")
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df_display, use_container_width=True)
                     
                     # 提供下载链接
                     csv_data = df.to_csv(index=False, encoding='utf-8-sig')
@@ -274,9 +315,10 @@ def query_data(keyword, bidding_type):
                         mime="text/csv"
                     )
                     
-                    # 数据可视化（如果有价格数据）
-                    if bidding_type == 1 and '中标价格(万元)' in df.columns:
-                        show_price_analysis(df)
+                    # 数据可视化（如果启用了图表显示）
+                    if (config_manager.get("query_settings.show_charts", True) and 
+                        bidding_type == 1 and '中标价格(万元)' in df.columns):
+                        show_price_analysis(df_display)
                         
                 else:
                     st.warning("未找到查询结果文件，请先执行数据下载。")
@@ -325,9 +367,153 @@ def show_price_analysis(df):
         st.info("暂无有效的价格数据进行分析")
 
 
-def show_help_page():
+def test_current_model_connection(config_manager):
+    """测试当前模型连接"""
+    logger.info("开始测试当前模型连接")
+    
+    with st.spinner("正在测试当前模型连接..."):
+        try:
+            current_model = config_manager.get_current_model_info()
+            logger.info(f"测试模型: {current_model['provider']} - {current_model['model']}")
+            
+            test_result = config_manager.test_model_connection()
+            
+            if test_result["success"]:
+                st.success(f"✅ {test_result['message']}")
+                
+                # 显示详细信息
+                with st.expander("📊 连接详情"):
+                    st.write(f"**提供商**: {test_result['provider_name']}")
+                    st.write(f"**响应时间**: {test_result.get('response_time', 'N/A')}ms")
+                    st.write(f"**模型回复**: {test_result.get('response_content', 'N/A')}")
+                
+                logger.info(f"模型连接测试成功: {test_result['provider_name']}, 响应时间: {test_result.get('response_time', 'N/A')}ms")
+                
+            else:
+                st.error(f"❌ {test_result['message']}")
+                st.warning(f"**详情**: {test_result['details']}")
+                logger.error(f"模型连接测试失败: {test_result['provider']} - {test_result['message']} - {test_result['details']}")
+                
+                # 显示解决建议
+                if "API密钥未配置" in test_result['message']:
+                    st.info(f"💡 **解决方案**: 请设置环境变量 `{test_result['details'].split(': ')[1]}`")
+                elif "连接失败" in test_result['message']:
+                    st.info("💡 **解决方案**: 请检查网络连接和API服务状态")
+                    
+        except Exception as e:
+            st.error(f"❌ 连接测试异常: {str(e)}")
+            logger.error(f"连接测试异常: {str(e)}")
+
+
+def test_all_models_connection(config_manager):
+    """测试所有模型连接"""
+    logger.info("开始测试所有模型连接")
+    
+    available_models = config_manager.get_available_models()
+    providers = list(available_models.keys())
+    
+    st.info(f"开始测试 {len(providers)} 个模型提供商的连接状态...")
+    
+    # 创建结果表格
+    results = []
+    
+    for i, provider in enumerate(providers):
+        provider_name = available_models[provider]["name"]
+        
+        # 显示进度
+        progress = (i + 1) / len(providers)
+        st.progress(progress, text=f"正在测试 {provider_name}...")
+        
+        logger.info(f"测试提供商: {provider}")
+        
+        try:
+            test_result = config_manager.test_model_connection(provider)
+            
+            results.append({
+                "提供商": provider_name,
+                "状态": "✅ 成功" if test_result["success"] else "❌ 失败",
+                "响应时间": f"{test_result.get('response_time', 'N/A')}ms" if test_result["success"] else "N/A",
+                "详情": test_result.get("details", test_result["message"])
+            })
+            
+            if test_result["success"]:
+                logger.info(f"提供商 {provider} 连接成功，响应时间: {test_result.get('response_time', 'N/A')}ms")
+            else:
+                logger.warning(f"提供商 {provider} 连接失败: {test_result['message']}")
+                
+        except Exception as e:
+            results.append({
+                "提供商": provider_name,
+                "状态": "❌ 异常",
+                "响应时间": "N/A",
+                "详情": str(e)
+            })
+            logger.error(f"提供商 {provider} 测试异常: {str(e)}")
+    
+    # 显示结果
+    st.subheader("📊 连接测试结果")
+    
+    # 统计信息
+    success_count = len([r for r in results if "✅ 成功" in r["状态"]])
+    total_count = len(results)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("总数", total_count)
+    with col2:
+        st.metric("成功", success_count)
+    with col3:
+        st.metric("成功率", f"{success_count/total_count*100:.1f}%")
+    
+    # 结果表格
+    import pandas as pd
+    df = pd.DataFrame(results)
+    st.dataframe(df, use_container_width=True)
+    
+    logger.info(f"所有模型连接测试完成，成功率: {success_count}/{total_count}")
+
+
+def show_help_page(config_manager):
     """显示系统说明页面"""
     st.header("📖 系统说明")
+    
+    # 显示当前配置信息
+    with st.expander("🔧 当前系统配置"):
+        current_model = config_manager.get_current_model_info()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**模型配置**")
+            st.write(f"- 提供商: {current_model['provider']}")
+            st.write(f"- 模型: {current_model['model']}")
+            st.write(f"- 状态: {'✅ 可用' if current_model['available'] else '❌ 需要配置API密钥'}")
+        
+        with col2:
+            st.write("**下载配置**")
+            st.write(f"- 默认最大页数: {config_manager.get('download_settings.default_max_pages', 5)}")
+            st.write(f"- 自动保存: {'✅ 启用' if config_manager.get('download_settings.auto_save', True) else '❌ 禁用'}")
+            
+        st.write("**查询配置**")
+        col3, col4 = st.columns(2)
+        with col3:
+            st.write(f"- 显示图表: {'✅ 启用' if config_manager.get('query_settings.show_charts', True) else '❌ 禁用'}")
+        with col4:
+            st.write(f"- 结果限制: {config_manager.get('query_settings.result_limit', 100)} 条")
+        
+        st.write(f"**配置文件位置**: `{config_manager.config_file}`")
+        
+        # 添加连接测试按钮
+        st.markdown("---")
+        st.subheader("🔌 模型连接测试")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("测试当前模型", help="测试当前选择的模型连通性", key="test_current"):
+                test_current_model_connection(config_manager)
+        
+        with col2:
+            if st.button("测试所有模型", help="测试所有配置的模型连通性", key="test_all"):
+                test_all_models_connection(config_manager)
     
     st.markdown("""
     ## 🎯 系统功能
