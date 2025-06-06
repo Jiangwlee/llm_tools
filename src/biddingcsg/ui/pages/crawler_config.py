@@ -931,14 +931,37 @@ class CrawlerConfigPage:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     output_file = Path(output_directory) / f"price_extraction_{keyword}_{timestamp}.json"
                     
+                    # 添加详细的保存日志
+                    ModernLogViewer.add_log_background(f"📁 输出目录: {output_directory}", "INFO")
+                    ModernLogViewer.add_log_background(f"📄 目标文件路径: {output_file}", "INFO")
+                    ModernLogViewer.add_log_background(f"📊 提取结果数量: {len(results)}", "INFO")
+                    
+                    # 确保输出目录存在
+                    output_file.parent.mkdir(parents=True, exist_ok=True)
+                    ModernLogViewer.add_log_background(f"✅ 确保目录存在: {output_file.parent}", "INFO")
+                    
                     if extractor.save_results(results, str(output_file)):
-                        ModernLogViewer.add_log_background(f"🎉 提取完成！结果已保存到: {output_file.name}", "SUCCESS")
+                        ModernLogViewer.add_log_background(f"🎉 提取完成！结果已保存到: {output_file}", "SUCCESS")
+                        ModernLogViewer.add_log_background(f"📏 文件大小: {output_file.stat().st_size / 1024:.1f}KB", "INFO")
                         st.session_state.extraction_results = results
                         st.session_state.extraction_output_file = str(output_file)
                     else:
                         ModernLogViewer.add_log_background("❌ 保存结果文件失败", "ERROR")
+                        ModernLogViewer.add_log_background(f"🔍 检查目录权限: {output_file.parent}", "ERROR")
                 else:
                     ModernLogViewer.add_log_background("⚠️ 未找到匹配的价格信息", "WARNING")
+                    ModernLogViewer.add_log_background(f"🔍 检查HTML目录: {html_dir}", "INFO")
+                    
+                    # 显示HTML目录中的文件
+                    if html_dir.exists():
+                        html_files = list(html_dir.rglob("*.html"))
+                        ModernLogViewer.add_log_background(f"📊 HTML目录文件数: {len(html_files)}", "INFO")
+                        if html_files:
+                            ModernLogViewer.add_log_background("📋 HTML文件列表 (前5个):", "INFO")
+                            for i, f in enumerate(html_files[:5]):
+                                ModernLogViewer.add_log_background(f"  {i+1}. {f.name}", "INFO")
+                    else:
+                        ModernLogViewer.add_log_background(f"❌ HTML目录不存在: {html_dir}", "ERROR")
                 
                 # 标记完成
                 st.session_state.extraction_completed = True
@@ -1276,6 +1299,18 @@ class CrawlerConfigPage:
         
         with col4:
             if st.button(
+                "🔍 调试检查",
+                use_container_width=True,
+                help="检查文件生成和路径问题"
+            ):
+                self._debug_file_paths(output_directory)
+        
+        # 第二行按钮
+        st.markdown("")  # 添加一些间距
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button(
                 "🗑️ 清理文件",
                 use_container_width=True,
                 help="批量删除旧的价格文件",
@@ -1298,13 +1333,31 @@ class CrawlerConfigPage:
         """扫描价格文件"""
         try:
             output_path = Path(output_directory)
+            
+            # 添加调试信息
+            ModernLogViewer.add_log_background(f"🔍 扫描价格文件目录: {output_path}", "DEBUG")
+            
             if not output_path.exists():
+                ModernLogViewer.add_log_background(f"❌ 目录不存在: {output_path}", "WARNING")
                 return []
             
             files_info = []
             
             # 查找所有价格提取结果文件
-            for file_path in output_path.glob("price_extraction_*.json"):
+            all_json_files = list(output_path.glob("*.json"))
+            price_files = list(output_path.glob("price_extraction_*.json"))
+            
+            ModernLogViewer.add_log_background(f"📊 目录统计 - 总JSON文件: {len(all_json_files)}, 价格文件: {len(price_files)}", "DEBUG")
+            
+            # 显示所有JSON文件名（调试用）
+            if all_json_files:
+                ModernLogViewer.add_log_background("📁 找到的JSON文件:", "DEBUG")
+                for f in all_json_files[:5]:  # 只显示前5个
+                    ModernLogViewer.add_log_background(f"  - {f.name}", "DEBUG")
+                if len(all_json_files) > 5:
+                    ModernLogViewer.add_log_background(f"  ... 还有 {len(all_json_files) - 5} 个文件", "DEBUG")
+            
+            for file_path in price_files:
                 try:
                     stat = file_path.stat()
                     file_size = stat.st_size
@@ -1535,10 +1588,12 @@ class CrawlerConfigPage:
     
     def _show_file_statistics(self, output_directory: str):
         """显示文件统计信息"""
-        files_info = self._scan_price_files(output_directory)
+        with st.spinner("🔍 正在扫描价格文件..."):
+            files_info = self._scan_price_files(output_directory)
         
         if not files_info:
-            st.info("📭 暂无价格文件统计信息")
+            st.warning("📭 暂无价格文件统计信息")
+            st.info("💡 提示：请先执行价格提取操作生成结果文件")
             return
         
         # 显示详细统计
@@ -1548,7 +1603,7 @@ class CrawlerConfigPage:
         total_success = sum(f.get('successful_extractions', 0) for f in files_info)
         avg_success_rate = (total_success / max(total_extractions, 1)) * 100
         
-        st.markdown("#### 📊 价格文件统计")
+        st.success("📊 价格文件统计信息")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -1569,14 +1624,40 @@ class CrawlerConfigPage:
                 keyword_stats[keyword]['count'] += 1
                 keyword_stats[keyword]['size'] += file_info['size']
             
-            st.markdown("**按关键词分组:**")
+            st.markdown("**📈 按关键词分组统计:**")
             for keyword, stats in keyword_stats.items():
                 st.write(f"• **{keyword}**: {stats['count']} 个文件, {stats['size']/(1024*1024):.1f}MB")
+        
+        # 显示文件列表预览
+        st.markdown("**📋 最近文件预览:**")
+        for i, file_info in enumerate(files_info[:3]):  # 只显示前3个
+            with st.expander(f"📄 {file_info['name']}", expanded=False):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"**大小**: {file_info['size_mb']:.1f}MB")
+                    st.write(f"**关键词**: {file_info['keyword']}")
+                with col2:
+                    st.write(f"**处理文件数**: {file_info.get('total_files', 0)}")
+                    st.write(f"**成功提取**: {file_info.get('successful_extractions', 0)}")
+                with col3:
+                    st.write(f"**成功率**: {file_info.get('success_rate', 0):.1f}%")
+                    st.write(f"**创建时间**: {file_info['formatted_time']}")
+        
+        if len(files_info) > 3:
+            st.caption(f"... 还有 {len(files_info) - 3} 个文件，点击'查看价格文件'查看完整列表")
     
     def _refresh_price_files(self, output_directory: str):
         """刷新价格文件列表"""
-        files_info = self._scan_price_files(output_directory)
-        st.session_state.file_operation_result = f"🔄 已刷新文件列表，找到 {len(files_info)} 个价格文件"
+        with st.spinner("🔄 正在刷新价格文件列表..."):
+            files_info = self._scan_price_files(output_directory)
+        
+        # 清理选中文件状态
+        st.session_state.selected_files = []
+        
+        if files_info:
+            st.session_state.file_operation_result = f"🔄 已刷新文件列表，找到 {len(files_info)} 个价格文件"
+        else:
+            st.session_state.file_operation_result = "🔄 已刷新文件列表，未找到价格文件"
     
     def _render_cleanup_dialog(self, output_directory: str):
         """渲染清理文件弹窗"""
@@ -1678,6 +1759,100 @@ class CrawlerConfigPage:
         st.session_state.file_operation_result = f"✅ 成功删除 {deleted_count} 个文件"
         st.session_state.selected_files = []
         ModernLogViewer.add_log_background(f"🗑️ 批量删除 {deleted_count} 个价格文件", "INFO")
+    
+    def _debug_file_paths(self, output_directory: str):
+        """调试文件路径和生成问题"""
+        ModernLogViewer.add_log_background("🔍 === 开始调试检查 ===", "INFO")
+        
+        # 1. 检查输出目录
+        output_path = Path(output_directory)
+        ModernLogViewer.add_log_background(f"📁 配置的输出目录: {output_path}", "INFO")
+        ModernLogViewer.add_log_background(f"📂 目录是否存在: {'是' if output_path.exists() else '否'}", "INFO")
+        
+        if output_path.exists():
+            # 检查目录权限
+            try:
+                test_file = output_path / "test_write_permission.tmp"
+                test_file.write_text("test")
+                test_file.unlink()
+                ModernLogViewer.add_log_background("✅ 目录写入权限: 正常", "INFO")
+            except Exception as e:
+                ModernLogViewer.add_log_background(f"❌ 目录写入权限: 异常 - {e}", "ERROR")
+            
+            # 列出所有文件
+            all_files = list(output_path.rglob("*"))
+            ModernLogViewer.add_log_background(f"📊 目录总文件数: {len(all_files)}", "INFO")
+            
+            # JSON文件
+            json_files = [f for f in all_files if f.suffix == '.json']
+            ModernLogViewer.add_log_background(f"📄 JSON文件数: {len(json_files)}", "INFO")
+            
+            if json_files:
+                ModernLogViewer.add_log_background("📋 JSON文件列表:", "INFO")
+                for f in json_files[:10]:  # 显示前10个
+                    ModernLogViewer.add_log_background(f"  - {f.name} ({f.stat().st_size / 1024:.1f}KB)", "INFO")
+            
+            # 价格文件
+            price_files = [f for f in json_files if f.name.startswith('price_extraction_')]
+            ModernLogViewer.add_log_background(f"💰 价格文件数: {len(price_files)}", "INFO")
+            
+            if price_files:
+                ModernLogViewer.add_log_background("📋 价格文件列表:", "INFO")
+                for f in price_files:
+                    stat = f.stat()
+                    size_kb = stat.st_size / 1024
+                    mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    ModernLogViewer.add_log_background(f"  - {f.name} ({size_kb:.1f}KB, {mtime})", "INFO")
+        
+        # 2. 检查HTML目录
+        html_dir = output_path / "raw_html"
+        ModernLogViewer.add_log_background(f"📁 HTML目录: {html_dir}", "INFO")
+        ModernLogViewer.add_log_background(f"📂 HTML目录是否存在: {'是' if html_dir.exists() else '否'}", "INFO")
+        
+        if html_dir.exists():
+            html_files = list(html_dir.rglob("*.html"))
+            ModernLogViewer.add_log_background(f"📄 HTML文件数: {len(html_files)}", "INFO")
+            
+            # 公示公告文件
+            announcement_files = [f for f in html_files if f.name.startswith('公示公告')]
+            ModernLogViewer.add_log_background(f"📋 公示公告文件数: {len(announcement_files)}", "INFO")
+            
+            if announcement_files:
+                ModernLogViewer.add_log_background("📋 公示公告文件列表 (前5个):", "INFO")
+                for f in announcement_files[:5]:
+                    stat = f.stat()
+                    size_kb = stat.st_size / 1024
+                    mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    ModernLogViewer.add_log_background(f"  - {f.name} ({size_kb:.1f}KB, {mtime})", "INFO")
+        
+        # 3. 检查最近的提取操作
+        if hasattr(st.session_state, 'extraction_output_file') and st.session_state.extraction_output_file:
+            last_output_file = st.session_state.extraction_output_file
+            ModernLogViewer.add_log_background(f"📄 最近的输出文件: {last_output_file}", "INFO")
+            
+            if Path(last_output_file).exists():
+                file_size = Path(last_output_file).stat().st_size / 1024
+                ModernLogViewer.add_log_background(f"✅ 文件存在，大小: {file_size:.1f}KB", "INFO")
+            else:
+                ModernLogViewer.add_log_background("❌ 文件不存在", "ERROR")
+        else:
+            ModernLogViewer.add_log_background("ℹ️ 尚未进行过价格提取操作", "INFO")
+        
+        # 4. 检查当前工作目录
+        import os
+        cwd = os.getcwd()
+        ModernLogViewer.add_log_background(f"🗂️ 当前工作目录: {cwd}", "INFO")
+        
+        # 5. 检查相对路径和绝对路径
+        if not output_path.is_absolute():
+            absolute_path = Path(cwd) / output_path
+            ModernLogViewer.add_log_background(f"📍 绝对路径: {absolute_path}", "INFO")
+            ModernLogViewer.add_log_background(f"📂 绝对路径是否存在: {'是' if absolute_path.exists() else '否'}", "INFO")
+        
+        ModernLogViewer.add_log_background("🔍 === 调试检查完成 ===", "INFO")
+        
+        # 显示结果提示
+        st.session_state.file_operation_result = "🔍 已完成调试检查，请查看日志了解详情"
 
 def main():
     """主函数"""
