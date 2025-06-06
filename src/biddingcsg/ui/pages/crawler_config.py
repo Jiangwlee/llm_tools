@@ -63,7 +63,8 @@ class CrawlerConfigPage:
             'selected_files': [],
             'file_operation_result': None,
             'last_scan_time': None,
-            'price_files_info': []
+            'price_files_info': [],
+            'show_delete_confirmation': False
         }
         
         for key, default_value in defaults.items():
@@ -1265,7 +1266,7 @@ class CrawlerConfigPage:
                             col1, col2, col3, col4, col5 = st.columns([0.5, 3, 1, 1.5, 2])
                             
                             with col1:
-                                selected = st.checkbox("", key=f"file_select_{i}", label_visibility="collapsed")
+                                selected = st.checkbox("选择文件", key=f"file_select_{i}", label_visibility="collapsed")
                                 if selected and file_info['path'] not in st.session_state.selected_files:
                                     st.session_state.selected_files.append(file_info['path'])
                                 elif not selected and file_info['path'] in st.session_state.selected_files:
@@ -1337,15 +1338,28 @@ class CrawlerConfigPage:
                             self._download_selected_files()
                     
                     with col4:
-                        if st.button(f"删除选中({selected_count})", disabled=selected_count == 0, use_container_width=True, type="secondary"):
-                            if st.button("确认删除选中的文件?", key="confirm_batch_delete"):
-                                self._delete_selected_files()
+                        if not st.session_state.get('show_delete_confirmation', False):
+                            if st.button(f"删除选中({selected_count})", disabled=selected_count == 0, use_container_width=True, type="secondary"):
+                                st.session_state.show_delete_confirmation = True
                                 st.rerun()
+                        else:
+                            st.warning(f"⚠️ 确认删除 {selected_count} 个选中的文件？此操作不可恢复！")
+                            col_confirm1, col_confirm2 = st.columns(2)
+                            with col_confirm1:
+                                if st.button("✅ 确认删除", type="primary", use_container_width=True, key="confirm_delete_yes"):
+                                    self._delete_selected_files()
+                                    st.session_state.show_delete_confirmation = False
+                                    st.rerun()
+                            with col_confirm2:
+                                if st.button("❌ 取消", use_container_width=True, key="confirm_delete_no"):
+                                    st.session_state.show_delete_confirmation = False
+                                    st.rerun()
                     
                     # 关闭按钮
                     if st.button("关闭", use_container_width=True):
                         st.session_state.show_price_files_dialog = False
                         st.session_state.selected_files = []
+                        st.session_state.show_delete_confirmation = False
                         st.rerun()
                         
                 except Exception as e:
