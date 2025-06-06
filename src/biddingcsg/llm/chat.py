@@ -1,6 +1,7 @@
 from openai import OpenAI
 from biddingcsg.utils.logger import logger
 from biddingcsg.llm.prompts import SYS_BIDDING_SUMMARY_PROMPT, SYS_PRICE_EXTRACTION_PROMPT
+from biddingcsg.utils.realtimelog import add_realtime_log
 import biddingcsg.config.global_config as config
 
 class UnifiedLLMClient:
@@ -109,9 +110,7 @@ class UnifiedLLMClient:
                         # 显示累计内容长度和当前片段
                         # status_callback(f"💭 {self.provider} 推理中...\n块{chunk_count}: `{display_content}`\n总长度: {len(full_content)}字符")
                         status_callback(f"💭 {full_content}")
-                    
-                    logger.info(f"收到模型 {self.provider} 的响应片段: {content}")
-            
+                    add_realtime_log(f"{content}")
             if full_content:
                 content = full_content.strip()
                 logger.info(f"模型 {self.provider} 调用成功，返回内容长度: {len(content)}")

@@ -15,7 +15,6 @@ from .models.config import CrawlerConfig, CrawlResult, CrawlSession
 from .services.storage import LocalStorageService
 from .services.crawler import BiddingCrawlerService
 from .services.info_extractor import InfoExtractor, create_info_extractor
-from .ui.components.log_viewer import LogViewer, ProgressViewer
 from .ui.components.model_selector import ModelSelector, get_model_selector
 from .ui.pages.crawler_config import CrawlerConfigPage
 

@@ -6,6 +6,9 @@
 
 from pathlib import Path
 
+# 默认基础路径
+DEFAULT_BASE_PATH = "output/"
+
 # 主要数据目录
 BIDDING_DATA_DIR = "bidding_data"
 
@@ -22,42 +25,42 @@ class BiddingPaths:
     """投标数据路径管理"""
     
     @staticmethod
-    def get_data_dir(base_path: str) -> Path:
+    def get_data_dir(base_path: str = DEFAULT_BASE_PATH) -> Path:
         """获取主数据目录"""
         return Path(base_path) / BIDDING_DATA_DIR
     
     @staticmethod
-    def get_raw_html_dir(base_path: str) -> Path:
+    def get_raw_html_dir(base_path: str = DEFAULT_BASE_PATH) -> Path:
         """获取原始HTML文件目录"""
         return Path(base_path) / BIDDING_DATA_DIR / RAW_HTML_DIR
     
     @staticmethod
-    def get_price_dir(base_path: str) -> Path:
+    def get_price_dir(base_path: str = DEFAULT_BASE_PATH) -> Path:
         """获取价格提取结果目录"""
         return Path(base_path) / BIDDING_DATA_DIR / PRICE_DIR
     
     @staticmethod
-    def get_stats_dir(base_path: str) -> Path:
+    def get_stats_dir(base_path: str = DEFAULT_BASE_PATH) -> Path:
         """获取统计数据目录"""
         return Path(base_path) / BIDDING_DATA_DIR / STATS_DIR
     
     @staticmethod
-    def get_metadata_dir(base_path: str) -> Path:
+    def get_metadata_dir(base_path: str = DEFAULT_BASE_PATH) -> Path:
         """获取元数据目录"""
         return Path(base_path) / BIDDING_DATA_DIR / METADATA_DIR
     
     @staticmethod
-    def get_cache_dir(base_path: str) -> Path:
+    def get_cache_dir(base_path: str = DEFAULT_BASE_PATH) -> Path:
         """获取缓存目录"""
         return Path(base_path) / BIDDING_DATA_DIR / CACHE_DIR
     
     @staticmethod
-    def get_logs_dir(base_path: str) -> Path:
+    def get_logs_dir(base_path: str = DEFAULT_BASE_PATH) -> Path:
         """获取日志目录"""
         return Path(base_path) / BIDDING_DATA_DIR / LOGS_DIR
     
     @staticmethod
-    def ensure_directories(base_path: str) -> None:
+    def ensure_directories(base_path: str = DEFAULT_BASE_PATH) -> None:
         """确保所有必要目录存在"""
         directories = [
             BiddingPaths.get_data_dir(base_path),

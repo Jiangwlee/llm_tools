@@ -64,7 +64,13 @@ class CrawlerConfigPage:
             'file_operation_result': None,
             'last_scan_time': None,
             'price_files_info': [],
-            'show_delete_confirmation': False
+            'show_delete_confirmation': False,
+            'show_single_delete_confirmation': False,
+            'single_delete_file_path': None,
+            
+            # 线程安全状态
+            'crawler_error': '',
+            'crawler_processing_time': 0.0
         }
         
         for key, default_value in defaults.items():
@@ -82,13 +88,48 @@ class CrawlerConfigPage:
             }
     
     def _crawler_status_fragment(self):
-        """爬虫状态检查 - 移除了fragment装饰器"""
-        if st.session_state.crawler_running:
-            # 检查线程是否还活着
-            if st.session_state.crawler_thread and not st.session_state.crawler_thread.is_alive():
-                st.session_state.crawler_running = False
-                st.session_state.crawler_thread = None
-                st.session_state.crawler_finished = True
+        """爬虫状态检查 - 线程安全的状态同步"""
+        crawler_thread = st.session_state.get('crawler_thread')
+        
+        if crawler_thread and isinstance(crawler_thread, threading.Thread):
+            # 检查线程是否完成
+            if not crawler_thread.is_alive() and st.session_state.get('crawler_running', False):
+                # 线程已完成，同步状态到session_state（在主线程中安全操作）
+                self._sync_crawler_state_from_thread(crawler_thread)
+            elif crawler_thread.is_alive():
+                # 线程仍在运行，同步进度信息
+                self._sync_crawler_progress_from_thread(crawler_thread)
+    
+    def _sync_crawler_state_from_thread(self, crawler_thread):
+        """从爬虫线程同步状态到session_state - 主线程中安全操作"""
+        try:
+            # 更新运行状态
+            st.session_state.crawler_running = False
+            st.session_state.crawler_finished = True
+            st.session_state.crawler_thread = None
+            
+            # 同步爬虫结果
+            if hasattr(crawler_thread, 'current_session') and crawler_thread.current_session:
+                st.session_state.current_session = crawler_thread.current_session
+            
+            # 同步错误信息
+            if hasattr(crawler_thread, 'error_message') and crawler_thread.error_message:
+                st.session_state.crawler_error = crawler_thread.error_message
+            
+            # 同步处理时间
+            if hasattr(crawler_thread, 'processing_time'):
+                st.session_state.crawler_processing_time = crawler_thread.processing_time
+                
+        except Exception as e:
+            logger.error(f"同步爬虫状态失败: {e}")
+    
+    def _sync_crawler_progress_from_thread(self, crawler_thread):
+        """从爬虫线程同步进度信息到session_state - 主线程中安全操作"""
+        try:
+            if hasattr(crawler_thread, 'progress_info'):
+                st.session_state.progress_info = crawler_thread.progress_info.copy()
+        except Exception as e:
+            logger.error(f"同步爬虫进度失败: {e}")
     
     def render(self):
         """渲染页面"""
@@ -264,88 +305,68 @@ class CrawlerConfigPage:
     
     def _render_realtime_status(self):
         """渲染实时状态组件"""
-        st.subheader("📊 实时状态")
+        # 添加实时日志显示区域
+        st.markdown("#### 📝 实时日志")
         
-        # 爬虫状态显示
-        if st.session_state.crawler_running:
-            st.success("🔄 爬虫运行中...")
-            
-            # 进度信息
-            progress_data = st.session_state.progress_info
-            progress_value = max(0, min(1, progress_data['percentage'] / 100))
-            
-            st.progress(progress_value)
-            
-            prog_col1, prog_col2 = st.columns(2)
-            with prog_col1:
-                st.metric(
-                    "进度",
-                    f"{progress_data['current']}/{progress_data['total']}"
-                )
-            with prog_col2:
-                st.metric(
-                    "完成度",
-                    f"{progress_data['percentage']:.1f}%"
-                )
-            
-            if progress_data['message']:
-                st.info(progress_data['message'])
-        else:
-            if st.session_state.current_session:
-                session = st.session_state.current_session
-                if session.status == "completed":
-                    st.success(f"✅ 上次爬取完成！\n共获取 {session.total_items_found} 条记录")
-                elif session.status == "failed":
-                    st.error(f"❌ 上次爬取失败:\n{session.error_message}")
-                else:
-                    st.info("⏳ 爬虫待机中")
+        # 添加自动刷新控制
+        log_col1, log_col2 = st.columns([3, 1])
+        with log_col1:
+            # 显示日志状态
+            if st.session_state.get('log_auto_refresh', True):
+                st.caption("🔄 自动刷新已启用（每秒更新）")
             else:
-                st.info("⏳ 爬虫待机中，请配置参数后启动")
+                st.caption("⏸️ 自动刷新已暂停")
+        with log_col2:
+            auto_refresh = st.checkbox(
+                "🔄 自动刷新",
+                value=st.session_state.get('log_auto_refresh', True),
+                key="log_auto_refresh",
+                help="每秒自动更新日志内容"
+            )
         
-        # 实时统计信息
-        st.markdown("#### 📈 实时统计")
+        # 使用 fragment 实现每秒自动刷新的日志显示
+        self._realtime_log_fragment()
+    
+    @st.fragment(run_every=1)  # 每秒自动刷新
+    def _realtime_log_fragment(self):
+        """实时日志 Fragment - 每秒自动刷新"""
+        # 只有在启用自动刷新时才处理
+        if not st.session_state.get('log_auto_refresh', True):
+            # 如果禁用自动刷新，只显示当前日志内容，不做额外处理
+            self._display_current_log()
+            return
         
-        stat_col1, stat_col2 = st.columns(2)
-        
-        with stat_col1:
-            log_count = len(st.session_state.get('log_entries', []))
-            st.metric("日志条数", log_count)
-        
-        with stat_col2:
-            # 删除了队列大小统计
-            st.metric("待处理", 0)
-        
-        # 控制按钮
-        st.markdown("#### 🎮 控制操作")
-        
-        ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
-        
-        with ctrl_col1:
-            if st.button(
-                "🛑 停止爬取",
-                disabled=not st.session_state.crawler_running,
-                use_container_width=True,
-                type="secondary"
-            ):
-                self._stop_crawler()
-        
-        with ctrl_col2:
-            if st.button(
-                "🗑️ 清空日志",
-                use_container_width=True
-            ):
-                # 删除了日志查看器调用
-                st.success("日志已清空")
-        
-        with ctrl_col3:
-            if st.button(
-                "🧹 清空缓存",
-                use_container_width=True,
-                type="secondary",
-                help="删除所有已保存的HTML文件和元数据"
-            ):
-                st.session_state.show_clear_cache_dialog = True
-        
+        # 读取并显示日志内容（自动刷新模式）
+        self._display_current_log()
+    
+    def _display_current_log(self):
+        """显示当前日志内容"""
+        try:
+            from biddingcsg.utils.realtimelog import get_realtime_log
+            log_content = get_realtime_log() or "暂无日志内容"
+            
+            # 添加更新时间信息
+            from datetime import datetime
+            current_time = datetime.now().strftime("%H:%M:%S")
+            
+            # 如果启用自动刷新，在日志内容前添加时间戳
+            if st.session_state.get('log_auto_refresh', True):
+                log_content_with_time = f"# 最后更新: {current_time}\n\n{log_content}"
+            else:
+                log_content_with_time = f"# 手动模式 - 点击自动刷新启用实时更新\n\n{log_content}"
+            
+            # 使用 st.code 替代 st.text_area，提供更好的拷贝体验
+            # st.code 支持用户选择和拷贝，更适合只读日志显示
+            st.code(
+                log_content_with_time,
+                language="text",  # 设置为纯文本模式
+                line_numbers=True  # 显示行号，便于定位
+            )
+        except Exception as e:
+            st.code(
+                f"读取日志失败: {e}",
+                language="text"
+            )
     
 
     def _render_stats_tab(self):
@@ -466,50 +487,79 @@ class CrawlerConfigPage:
             crawler_service = BiddingCrawlerService(config, storage_service)
             
             # 进度回调函数
-            def progress_callback(current, total, message):
-                try:
-                    percentage = (current / total * 100) if total > 0 else 0
-                    st.session_state.progress_info.update({
-                        'current': current,
-                        'total': total,
-                        'message': message,
-                        'percentage': percentage
-                    })
+            # 创建线程安全的爬虫工作类
+            class CrawlerWorker(threading.Thread):
+                """爬虫工作线程类 - 线程安全，不直接访问session_state"""
+                
+                def __init__(self, crawler_service):
+                    super().__init__(daemon=True)
+                    self.crawler_service = crawler_service
+                    self.start_time = datetime.now()
                     
-                except Exception as e:
-                    logger.error(f"进度回调错误: {e}")
-            
-            # 爬虫工作线程
-            def crawler_worker():
-                try:
-                    st.session_state.crawler_running = True
-                    # 删除了日志调用
+                    # 线程安全的状态属性
+                    self.status = 'running'  # running, completed, failed, stopped
+                    self.current_session = None
+                    self.error_message = ''
+                    self.processing_time = 0.0
                     
-                    session = crawler_service.start_crawling(
-                        progress_callback=progress_callback
-                    )
-                    
-                    st.session_state.current_session = session
-                    
-                    if session.status == "completed":
-                        # 删除了日志调用
-                        pass
-                    else:
-                        # 删除了日志调用
-                        pass
+                    # 进度信息属性
+                    self.progress_info = {
+                        'current': 0,
+                        'total': 0,
+                        'message': '准备开始...',
+                        'percentage': 0.0
+                    }
+                
+                def progress_callback(self, current, total, message):
+                    """线程安全的进度回调 - 只更新线程属性"""
+                    try:
+                        percentage = (current / total * 100) if total > 0 else 0
+                        self.progress_info.update({
+                            'current': current,
+                            'total': total,
+                            'message': message,
+                            'percentage': percentage
+                        })
+                    except Exception as e:
+                        logger.error(f"进度回调错误: {e}")
+                
+                def run(self):
+                    """线程执行方法 - 不访问session_state"""
+                    try:
+                        # 执行爬虫任务
+                        session = self.crawler_service.start_crawling(
+                            progress_callback=self.progress_callback
+                        )
                         
-                except Exception as e:
-                    # 删除了日志调用
-                    logger.error(f"爬虫执行异常: {e}", exc_info=True)
-                finally:
-                    st.session_state.crawler_running = False
-                    st.session_state.crawler_thread = None
-                    st.session_state.crawler_finished = True
+                        # 保存结果到线程属性
+                        self.current_session = session
+                        
+                        if session.status == "completed":
+                            self.status = 'completed'
+                        else:
+                            self.status = 'failed'
+                            self.error_message = f"爬虫未正常完成，状态: {session.status}"
+                            
+                    except Exception as e:
+                        logger.error(f"爬虫执行异常: {e}", exc_info=True)
+                        self.status = 'failed'
+                        self.error_message = str(e)
+                    finally:
+                        # 计算处理时间
+                        self.processing_time = (datetime.now() - self.start_time).total_seconds()
+                        
+                        # 确保状态被设置
+                        if self.status == 'running':
+                            self.status = 'completed'
+                
+                def stop(self):
+                    """停止爬虫 - 设置停止标志"""
+                    self.status = 'stopped'
             
             # 启动后台线程
-            crawler_thread = threading.Thread(target=crawler_worker, daemon=True)
-            crawler_thread.start()
-            st.session_state.crawler_thread = crawler_thread
+            crawler_worker = CrawlerWorker(crawler_service)
+            crawler_worker.start()
+            st.session_state.crawler_thread = crawler_worker
             
             # 删除了日志调用
             st.success("🚀 爬虫已启动！请在结果统计标签页查看进度。")
@@ -520,84 +570,86 @@ class CrawlerConfigPage:
             st.error(f"启动失败: {e}")
     
     def _stop_crawler(self):
-        """停止爬虫"""
-        if st.session_state.crawler_running:
-            # 删除了日志调用
+        """停止爬虫 - 线程安全方式"""
+        crawler_thread = st.session_state.get('crawler_thread')
+        
+        if crawler_thread and crawler_thread.is_alive():
+            # 调用线程的停止方法
+            if hasattr(crawler_thread, 'stop'):
+                crawler_thread.stop()
+            
+            # 更新UI状态
             st.session_state.crawler_running = False
             st.warning("停止信号已发送，爬虫将在安全点停止")
+
+    @st.dialog("🧹 清空缓存确认", width="large")
+    def _clear_cache_dialog(self):
+        """清空缓存确认弹窗 - 作为类方法"""
+        try:
+            # 获取或创建存储服务实例
+            storage_service = st.session_state.get('storage_service')
+            
+            if not storage_service:
+                # 如果没有存储服务实例，创建一个默认的
+                # 使用默认配置创建存储服务
+                default_config = CrawlerConfig(
+                    search_keyword="temp",
+                    output_directory=str(Path.cwd() / "output")
+                )
+                storage_service = LocalStorageService(default_config)
+            
+            # 显示警告信息
+            st.warning("⚠️ **此操作不可恢复！**")
+            st.markdown("""
+            **将删除以下数据：**
+            - `bidding_data/raw_html/` 下的所有HTML文件
+            - `bidding_data/metadata/` 下的所有元数据文件
+            - 所有已爬取URL记录
+            """)
+            
+            # 显示当前文件统计
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if storage_service.html_dir.exists():
+                    html_files = list(storage_service.html_dir.rglob('*.html'))
+                    st.metric("📄 HTML文件", f"{len(html_files)} 个")
+                else:
+                    st.metric("📄 HTML文件", "0 个")
+            
+            with col2:
+                if storage_service.metadata_dir.exists():
+                    metadata_files = list(storage_service.metadata_dir.glob('*_metadata.json'))
+                    st.metric("📋 元数据文件", f"{len(metadata_files)} 个")
+                else:
+                    st.metric("📋 元数据文件", "0 个")
+            
+            st.markdown("---")
+            
+            # 确认按钮
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("❌ 取消", use_container_width=True):
+                    st.session_state.show_clear_cache_dialog = False
+                    st.rerun()
+            
+            with col2:
+                if st.button("✅ 确认清空", type="primary", use_container_width=True):
+                    # 执行清空操作
+                    self._execute_clear_cache(storage_service)
+                    st.session_state.show_clear_cache_dialog = False
+                    st.rerun()
+                    
+        except Exception as e:
+            error_msg = f"❌ 对话框错误: {e}"
+            st.error(error_msg)
+            logger.error(f"清空缓存对话框错误: {e}", exc_info=True)
     
     def _render_clear_cache_dialog(self):
         """渲染清空缓存弹窗对话框"""
         if st.session_state.get('show_clear_cache_dialog'):
-            @st.dialog("🧹 清空缓存确认", width="large")
-            def clear_cache_dialog():
-                try:
-                    # 获取或创建存储服务实例
-                    storage_service = st.session_state.get('storage_service')
-                    
-                    if not storage_service:
-                        # 如果没有存储服务实例，创建一个默认的
-                        # 删除了日志调用
-                        
-                        # 使用默认配置创建存储服务
-                        default_config = CrawlerConfig(
-                            search_keyword="temp",
-                            output_directory=str(Path.cwd() / "output")
-                        )
-                        storage_service = LocalStorageService(default_config)
-                    
-                    # 显示警告信息
-                    st.warning("⚠️ **此操作不可恢复！**")
-                    st.markdown("""
-                    **将删除以下数据：**
-                    - `bidding_data/raw_html/` 下的所有HTML文件
-                    - `bidding_data/metadata/` 下的所有元数据文件
-                    - 所有已爬取URL记录
-                    """)
-                    
-                    # 显示当前文件统计
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if storage_service.html_dir.exists():
-                            html_files = list(storage_service.html_dir.rglob('*.html'))
-                            st.metric("📄 HTML文件", f"{len(html_files)} 个")
-                        else:
-                            st.metric("📄 HTML文件", "0 个")
-                    
-                    with col2:
-                        if storage_service.metadata_dir.exists():
-                            metadata_files = list(storage_service.metadata_dir.glob('*_metadata.json'))
-                            st.metric("📋 元数据文件", f"{len(metadata_files)} 个")
-                        else:
-                            st.metric("📋 元数据文件", "0 个")
-                    
-                    st.markdown("---")
-                    
-                    # 确认按钮
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if st.button("❌ 取消", use_container_width=True):
-                            # 删除了日志调用
-                            st.session_state.show_clear_cache_dialog = False
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("✅ 确认清空", type="primary", use_container_width=True):
-                            # 执行清空操作
-                            self._execute_clear_cache(storage_service)
-                            st.session_state.show_clear_cache_dialog = False
-                            st.rerun()
-                            
-                except Exception as e:
-                    error_msg = f"❌ 对话框错误: {e}"
-                    st.error(error_msg)
-                    # 删除了日志调用
-                    logger.error(f"清空缓存对话框错误: {e}", exc_info=True)
-            
-            # 显示对话框
-            clear_cache_dialog()
+            self._clear_cache_dialog()
     
     def _execute_clear_cache(self, storage_service):
         """执行清空缓存操作"""
@@ -974,6 +1026,161 @@ class CrawlerConfigPage:
         """启动测试价格提取功能"""
         return self._start_price_extraction_internal(keyword, output_directory, test_mode=True)
     
+    @st.dialog("📁 价格文件管理", width="large")
+    def _price_files_dialog(self, output_directory: str):
+        """价格文件管理弹窗 - 作为类方法"""
+        try:
+            # 扫描文件
+            files_info = self._scan_price_files(output_directory)
+            
+            if not files_info:
+                st.warning("📭 未找到任何价格提取结果文件")
+                st.info("💡 提示：请先执行价格提取操作生成结果文件")
+                
+                if st.button("关闭", use_container_width=True):
+                    st.session_state.show_price_files_dialog = False
+                    st.rerun()
+                return
+            
+            # 显示统计信息
+            total_files = len(files_info)
+            total_size = sum(f['size'] for f in files_info)
+            latest_file = files_info[0]['formatted_time'] if files_info else "无"
+            
+            st.markdown("#### 📊 统计信息")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("总文件数", f"{total_files} 个")
+            with col2:
+                st.metric("总大小", f"{total_size / (1024*1024):.1f} MB")
+            with col3:
+                st.metric("最新文件", latest_file.split()[0])  # 只显示日期
+            
+            st.markdown("#### 📋 文件列表")
+            
+            # 文件列表表格
+            for i, file_info in enumerate(files_info):
+                with st.container():
+                    col1, col2, col3, col4, col5 = st.columns([0.5, 3, 1, 1.5, 2])
+                    
+                    with col1:
+                        selected = st.checkbox("选择文件", key=f"file_select_{i}", label_visibility="collapsed")
+                        if selected and file_info['path'] not in st.session_state.selected_files:
+                            st.session_state.selected_files.append(file_info['path'])
+                        elif not selected and file_info['path'] in st.session_state.selected_files:
+                            st.session_state.selected_files.remove(file_info['path'])
+                    
+                    with col2:
+                        file_type_icon = "🧪" if file_info.get('file_type') == '测试' else "🚀"
+                        st.write(f"**{file_type_icon} {file_info['name']}**")
+                        st.caption(f"类型: {file_info.get('file_type', '未知')} | 关键词: {file_info['keyword']} | 成功率: {file_info.get('success_rate', 0):.1f}%")
+                    
+                    with col3:
+                        # 使用全局配置的文件大小显示
+                        if file_info['size_mb'] >= FileSizes.SIZE_DISPLAY_MB_THRESHOLD:
+                            st.write(f"{file_info['size_mb']:.1f}MB")
+                        elif file_info['size_kb'] >= FileSizes.SIZE_DISPLAY_KB_THRESHOLD:
+                            st.write(f"{file_info['size_kb']:.1f}KB")
+                        else:
+                            st.write(f"{file_info['size']}B")
+                    
+                    with col4:
+                        st.write(file_info['formatted_time'].split()[0])  # 只显示日期
+                    
+                    with col5:
+                        btn_col1, btn_col2 = st.columns(2)
+                        
+                        with btn_col1:
+                            # 直接下载按钮，使用st.download_button
+                            try:
+                                with open(file_info['path'], 'r', encoding='utf-8') as f:
+                                    file_content = f.read()
+                                
+                                st.download_button(
+                                    label="📥",
+                                    data=file_content,
+                                    file_name=file_info['name'],
+                                    mime="application/json",
+                                    key=f"download_{i}",
+                                    help="下载文件",
+                                    use_container_width=True
+                                )
+                            except Exception as e:
+                                st.button("❌", disabled=True, help=f"下载失败: {e}", key=f"download_error_{i}")
+                        
+                        with btn_col2:
+                            if not st.session_state.get('show_single_delete_confirmation', False) or st.session_state.get('single_delete_file_path') != file_info['path']:
+                                if st.button("🗑️", key=f"delete_{i}", help="删除"):
+                                    st.session_state.show_single_delete_confirmation = True
+                                    st.session_state.single_delete_file_path = file_info['path']
+                                    st.rerun()
+                            else:
+                                st.warning(f"⚠️ 确认删除 {file_info['name']}？")
+                                col_single1, col_single2 = st.columns(2)
+                                with col_single1:
+                                    if st.button("✅", type="primary", key=f"confirm_single_delete_{i}", help="确认删除"):
+                                        self._delete_price_file(file_info['path'])
+                                        st.session_state.show_single_delete_confirmation = False
+                                        st.session_state.single_delete_file_path = None
+                                        st.rerun()
+                                with col_single2:
+                                    if st.button("❌", key=f"cancel_single_delete_{i}", help="取消"):
+                                        st.session_state.show_single_delete_confirmation = False
+                                        st.session_state.single_delete_file_path = None
+                                        st.rerun()
+            
+            st.markdown("---")
+            
+            # 批量操作
+            st.markdown("#### 🔧 批量操作")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("全选", use_container_width=True):
+                    st.session_state.selected_files = [f['path'] for f in files_info]
+                    st.rerun()
+            
+            with col2:
+                if st.button("清空选择", use_container_width=True):
+                    st.session_state.selected_files = []
+                    st.rerun()
+            
+            with col3:
+                selected_count = len(st.session_state.selected_files)
+                if st.button(f"下载选中({selected_count})", disabled=selected_count == 0, use_container_width=True):
+                    self._download_selected_files()
+            
+            with col4:
+                if not st.session_state.get('show_delete_confirmation', False):
+                    if st.button(f"删除选中({selected_count})", disabled=selected_count == 0, use_container_width=True, type="secondary"):
+                        st.session_state.show_delete_confirmation = True
+                        st.rerun()
+                else:
+                    st.warning(f"⚠️ 确认删除 {selected_count} 个选中的文件？此操作不可恢复！")
+                    col_confirm1, col_confirm2 = st.columns(2)
+                    with col_confirm1:
+                        if st.button("✅ 确认删除", type="primary", use_container_width=True, key="confirm_delete_yes"):
+                            self._delete_selected_files()
+                            st.session_state.show_delete_confirmation = False
+                            st.rerun()
+                    with col_confirm2:
+                        if st.button("❌ 取消", use_container_width=True, key="confirm_delete_no"):
+                            st.session_state.show_delete_confirmation = False
+                            st.rerun()
+            
+            # 关闭按钮
+            if st.button("关闭", use_container_width=True):
+                st.session_state.show_price_files_dialog = False
+                st.session_state.selected_files = []
+                st.session_state.show_delete_confirmation = False
+                st.session_state.show_single_delete_confirmation = False
+                st.session_state.single_delete_file_path = None
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"文件管理出错: {e}")
+            logger.error(f"文件管理异常: {e}")
+
     def _find_latest_test_file(self, html_dir: Path, keyword: str) -> Optional[Path]:
         """找到最新的匹配测试文件"""
         try:
@@ -1228,146 +1435,7 @@ class CrawlerConfigPage:
     def _render_price_files_dialog(self, output_directory: str):
         """渲染价格文件管理弹窗"""
         if st.session_state.get('show_price_files_dialog', False):
-            
-            @st.dialog("📁 价格文件管理", width="large")
-            def price_files_dialog():
-                try:
-                    # 扫描文件
-                    files_info = self._scan_price_files(output_directory)
-                    
-                    if not files_info:
-                        st.warning("📭 未找到任何价格提取结果文件")
-                        st.info("💡 提示：请先执行价格提取操作生成结果文件")
-                        
-                        if st.button("关闭", use_container_width=True):
-                            st.session_state.show_price_files_dialog = False
-                            st.rerun()
-                        return
-                    
-                    # 显示统计信息
-                    total_files = len(files_info)
-                    total_size = sum(f['size'] for f in files_info)
-                    latest_file = files_info[0]['formatted_time'] if files_info else "无"
-                    
-                    st.markdown("#### 📊 统计信息")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("总文件数", f"{total_files} 个")
-                    with col2:
-                        st.metric("总大小", f"{total_size / (1024*1024):.1f} MB")
-                    with col3:
-                        st.metric("最新文件", latest_file.split()[0])  # 只显示日期
-                    
-                    st.markdown("#### 📋 文件列表")
-                    
-                    # 文件列表表格
-                    for i, file_info in enumerate(files_info):
-                        with st.container():
-                            col1, col2, col3, col4, col5 = st.columns([0.5, 3, 1, 1.5, 2])
-                            
-                            with col1:
-                                selected = st.checkbox("选择文件", key=f"file_select_{i}", label_visibility="collapsed")
-                                if selected and file_info['path'] not in st.session_state.selected_files:
-                                    st.session_state.selected_files.append(file_info['path'])
-                                elif not selected and file_info['path'] in st.session_state.selected_files:
-                                    st.session_state.selected_files.remove(file_info['path'])
-                            
-                            with col2:
-                                file_type_icon = "🧪" if file_info.get('file_type') == '测试' else "🚀"
-                                st.write(f"**{file_type_icon} {file_info['name']}**")
-                                st.caption(f"类型: {file_info.get('file_type', '未知')} | 关键词: {file_info['keyword']} | 成功率: {file_info.get('success_rate', 0):.1f}%")
-                            
-                            with col3:
-                                # 使用全局配置的文件大小显示
-                                if file_info['size_mb'] >= FileSizes.SIZE_DISPLAY_MB_THRESHOLD:
-                                    st.write(f"{file_info['size_mb']:.1f}MB")
-                                elif file_info['size_kb'] >= FileSizes.SIZE_DISPLAY_KB_THRESHOLD:
-                                    st.write(f"{file_info['size_kb']:.1f}KB")
-                                else:
-                                    st.write(f"{file_info['size']}B")
-                            
-                            with col4:
-                                st.write(file_info['formatted_time'].split()[0])  # 只显示日期
-                            
-                            with col5:
-                                btn_col1, btn_col2 = st.columns(2)
-                                
-                                with btn_col1:
-                                    # 直接下载按钮，使用st.download_button
-                                    try:
-                                        with open(file_info['path'], 'r', encoding='utf-8') as f:
-                                            file_content = f.read()
-                                        
-                                        st.download_button(
-                                            label="📥",
-                                            data=file_content,
-                                            file_name=file_info['name'],
-                                            mime="application/json",
-                                            key=f"download_{i}",
-                                            help="下载文件",
-                                            use_container_width=True
-                                        )
-                                    except Exception as e:
-                                        st.button("❌", disabled=True, help=f"下载失败: {e}", key=f"download_error_{i}")
-                                
-                                with btn_col2:
-                                    if st.button("🗑️", key=f"delete_{i}", help="删除"):
-                                        if st.button(f"确认删除 {file_info['name']}?", key=f"confirm_delete_{i}"):
-                                            self._delete_price_file(file_info['path'])
-                                            st.rerun()
-                    
-                    st.markdown("---")
-                    
-                    # 批量操作
-                    st.markdown("#### 🔧 批量操作")
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        if st.button("全选", use_container_width=True):
-                            st.session_state.selected_files = [f['path'] for f in files_info]
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("清空选择", use_container_width=True):
-                            st.session_state.selected_files = []
-                            st.rerun()
-                    
-                    with col3:
-                        selected_count = len(st.session_state.selected_files)
-                        if st.button(f"下载选中({selected_count})", disabled=selected_count == 0, use_container_width=True):
-                            self._download_selected_files()
-                    
-                    with col4:
-                        if not st.session_state.get('show_delete_confirmation', False):
-                            if st.button(f"删除选中({selected_count})", disabled=selected_count == 0, use_container_width=True, type="secondary"):
-                                st.session_state.show_delete_confirmation = True
-                                st.rerun()
-                        else:
-                            st.warning(f"⚠️ 确认删除 {selected_count} 个选中的文件？此操作不可恢复！")
-                            col_confirm1, col_confirm2 = st.columns(2)
-                            with col_confirm1:
-                                if st.button("✅ 确认删除", type="primary", use_container_width=True, key="confirm_delete_yes"):
-                                    self._delete_selected_files()
-                                    st.session_state.show_delete_confirmation = False
-                                    st.rerun()
-                            with col_confirm2:
-                                if st.button("❌ 取消", use_container_width=True, key="confirm_delete_no"):
-                                    st.session_state.show_delete_confirmation = False
-                                    st.rerun()
-                    
-                    # 关闭按钮
-                    if st.button("关闭", use_container_width=True):
-                        st.session_state.show_price_files_dialog = False
-                        st.session_state.selected_files = []
-                        st.session_state.show_delete_confirmation = False
-                        st.rerun()
-                        
-                except Exception as e:
-                    st.error(f"文件管理出错: {e}")
-                    logger.error(f"文件管理异常: {e}")
-            
-            # 显示弹窗
-            price_files_dialog()
+            self._price_files_dialog(output_directory)
     
 
     
@@ -1442,6 +1510,82 @@ class CrawlerConfigPage:
         if len(files_info) > 3:
             st.caption(f"... 还有 {len(files_info) - 3} 个文件，点击'查看价格文件'查看完整列表")
     
+    @st.dialog("🗑️ 批量清理价格文件", width="large")
+    def _cleanup_dialog(self, output_directory: str):
+        """批量清理价格文件弹窗 - 作为类方法"""
+        st.warning("⚠️ **此操作将永久删除选中的价格文件！**")
+        
+        files_info = self._scan_price_files(output_directory)
+        if not files_info:
+            st.info("📭 没有可清理的价格文件")
+            if st.button("关闭"):
+                st.session_state.show_cleanup_dialog = False
+                st.rerun()
+            return
+        
+        # 按时间分组显示
+        st.markdown("#### 🗂️ 选择要清理的文件")
+        
+        # 提供快速选择选项
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            days_7 = st.button("清理7天前", use_container_width=True)
+        with col2:
+            days_30 = st.button("清理30天前", use_container_width=True)
+        with col3:
+            all_files = st.button("全部清理", use_container_width=True)
+        
+        # 文件列表
+        selected_for_cleanup = []
+        cutoff_date = None
+        
+        if days_7:
+            cutoff_date = datetime.now() - timedelta(days=7)
+        elif days_30:
+            cutoff_date = datetime.now() - timedelta(days=30)
+        elif all_files:
+            cutoff_date = datetime.now()
+        
+        for i, file_info in enumerate(files_info):
+            should_select = cutoff_date and file_info['created_time'] < cutoff_date
+            
+            if st.checkbox(
+                f"{file_info['name']} ({file_info['formatted_time']}, {file_info['size_mb']:.1f}MB)",
+                value=should_select,
+                key=f"cleanup_select_{i}"
+            ):
+                selected_for_cleanup.append(file_info['path'])
+        
+        st.markdown("---")
+        
+        # 确认清理
+        if selected_for_cleanup:
+            st.warning(f"将删除 {len(selected_for_cleanup)} 个文件")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("确认删除", type="primary", use_container_width=True):
+                    deleted_count = 0
+                    for file_path in selected_for_cleanup:
+                        try:
+                            Path(file_path).unlink()
+                            deleted_count += 1
+                        except Exception as e:
+                            st.error(f"删除 {Path(file_path).name} 失败: {e}")
+                    
+                    st.success(f"✅ 成功删除 {deleted_count} 个文件")
+                    st.session_state.show_cleanup_dialog = False
+                    st.rerun()
+            
+            with col2:
+                if st.button("取消", use_container_width=True):
+                    st.session_state.show_cleanup_dialog = False
+                    st.rerun()
+        else:
+            if st.button("关闭", use_container_width=True):
+                st.session_state.show_cleanup_dialog = False
+                st.rerun()
+
     def _refresh_price_files(self, output_directory: str):
         """刷新价格文件列表"""
         with st.spinner("🔄 正在刷新价格文件列表..."):
@@ -1458,84 +1602,7 @@ class CrawlerConfigPage:
     def _render_cleanup_dialog(self, output_directory: str):
         """渲染清理文件弹窗"""
         if st.session_state.get('show_cleanup_dialog', False):
-            
-            @st.dialog("🗑️ 批量清理价格文件", width="large")
-            def cleanup_dialog():
-                st.warning("⚠️ **此操作将永久删除选中的价格文件！**")
-                
-                files_info = self._scan_price_files(output_directory)
-                if not files_info:
-                    st.info("📭 没有可清理的价格文件")
-                    if st.button("关闭"):
-                        st.session_state.show_cleanup_dialog = False
-                        st.rerun()
-                    return
-                
-                # 按时间分组显示
-                st.markdown("#### 🗂️ 选择要清理的文件")
-                
-                # 提供快速选择选项
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    days_7 = st.button("清理7天前", use_container_width=True)
-                with col2:
-                    days_30 = st.button("清理30天前", use_container_width=True)
-                with col3:
-                    all_files = st.button("全部清理", use_container_width=True)
-                
-                # 文件列表
-                selected_for_cleanup = []
-                cutoff_date = None
-                
-                if days_7:
-                    cutoff_date = datetime.now() - timedelta(days=7)
-                elif days_30:
-                    cutoff_date = datetime.now() - timedelta(days=30)
-                elif all_files:
-                    cutoff_date = datetime.now()
-                
-                for i, file_info in enumerate(files_info):
-                    should_select = cutoff_date and file_info['created_time'] < cutoff_date
-                    
-                    if st.checkbox(
-                        f"{file_info['name']} ({file_info['formatted_time']}, {file_info['size_mb']:.1f}MB)",
-                        value=should_select,
-                        key=f"cleanup_select_{i}"
-                    ):
-                        selected_for_cleanup.append(file_info['path'])
-                
-                st.markdown("---")
-                
-                # 确认清理
-                if selected_for_cleanup:
-                    st.warning(f"将删除 {len(selected_for_cleanup)} 个文件")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("确认删除", type="primary", use_container_width=True):
-                            deleted_count = 0
-                            for file_path in selected_for_cleanup:
-                                try:
-                                    Path(file_path).unlink()
-                                    deleted_count += 1
-                                except Exception as e:
-                                    st.error(f"删除 {Path(file_path).name} 失败: {e}")
-                            
-                            st.success(f"✅ 成功删除 {deleted_count} 个文件")
-                            pass
-                            st.session_state.show_cleanup_dialog = False
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("取消", use_container_width=True):
-                            st.session_state.show_cleanup_dialog = False
-                            st.rerun()
-                else:
-                    if st.button("关闭", use_container_width=True):
-                        st.session_state.show_cleanup_dialog = False
-                        st.rerun()
-            
-            cleanup_dialog()
+            self._cleanup_dialog(output_directory)
     
     def _download_selected_files(self):
         """下载选中的文件"""

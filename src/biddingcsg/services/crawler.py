@@ -300,9 +300,7 @@ class BiddingCrawlerService:
                 self._log(f"📖 处理第 {self.current_page_num}/{total_pages} 页")
                 
                 # 更新进度
-                if self.progress_callback:
-                    self.progress_callback(self.current_page_num, total_pages, 
-                                         f"正在处理第 {self.current_page_num} 页")
+                self._log(f"正在处理第 {self.current_page_num} 页")
                 
                 # 解析当前页面
                 page_results = self._parse_project_list()
@@ -421,7 +419,7 @@ class BiddingCrawlerService:
             return None
     
     def _get_detail_content(self, url: str) -> dict:
-        """获取详细页面内容"""
+        """获取详细页面内容 - 修复页面状态管理"""
         try:
             self._log(f"🔗 访问详细页面: {url}")
             
@@ -447,6 +445,10 @@ class BiddingCrawlerService:
                     'content': '',
                     'raw_html': ''
                 }
+            
+            # 保存当前列表页URL，用于返回
+            list_page_url = self.page.url
+            self._log(f"💾 保存列表页URL: {list_page_url}")
             
             # 访问详细页面，增加重试机制
             max_retries = 3
@@ -518,15 +520,41 @@ class BiddingCrawlerService:
             content_div = soup.find('div', class_='Content')
             content_text = content_div.text.strip() if content_div else ""
             
+            # 保存页面内容
+            page_content = self.page.content()
+            
+            # ✅ 关键修复：返回列表页，确保翻页功能正常
+            try:
+                self._log(f"🔙 返回列表页: {list_page_url}")
+                self.page.goto(list_page_url, wait_until='load', timeout=10000)
+                
+                # 等待列表页面加载
+                self.page.locator('div.List2').wait_for(state='visible', timeout=5000)
+                self._log("✅ 成功返回列表页")
+                
+            except Exception as return_error:
+                self._log(f"⚠️ 返回列表页失败: {return_error}")
+                # 如果返回失败，记录错误但不中断流程
+            
             return {
                 'title': title,
                 'date': date,
                 'content': content_text,
-                'raw_html': self.page.content()
+                'raw_html': page_content
             }
             
         except Exception as e:
             self._log(f"❌ 获取详细内容失败: {e}")
+            
+            # 即使失败也尝试返回列表页
+            try:
+                if 'list_page_url' in locals():
+                    self._log(f"🔙 尝试返回列表页（错误恢复）: {list_page_url}")
+                    self.page.goto(list_page_url, wait_until='load', timeout=5000)
+                    self.page.locator('div.List2').wait_for(state='visible', timeout=3000)
+            except:
+                pass  # 静默处理恢复失败
+            
             return {
                 'title': '',
                 'date': '',
@@ -562,7 +590,7 @@ class BiddingCrawlerService:
             return True
             
         except Exception as e:
-            self._log(f"❌ 翻页失败: {e}")
+            self._log(f"❌ 翻页失败: {e}, 当前页面URL: {self.page.url}")
             return False
     
     def _random_wait(self):

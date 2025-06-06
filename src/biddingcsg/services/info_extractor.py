@@ -14,6 +14,8 @@ from bs4 import BeautifulSoup
 from biddingcsg.llm.chat import LLMHelper
 from biddingcsg.utils.logger import get_logger
 from biddingcsg.config.paths import BiddingPaths
+from biddingcsg.utils.realtimelog import add_realtime_log, clear_realtime_log
+from biddingcsg.utils.markdown import remove_markdown_mark
 
 logger = get_logger(__name__)
 
@@ -131,7 +133,7 @@ class InfoExtractor:
         """停止提取过程"""
         self.stop_requested = True
         logger.info("收到停止提取请求")
-    
+
     def _scan_files(self, keyword: str) -> List[Path]:
         """
         扫描匹配的HTML文件
@@ -191,9 +193,14 @@ class InfoExtractor:
         # 第三步：在raw_html目录下找到对应的HTML文件
         for filename in matched_filenames:
             # 在raw_html目录及其子目录中查找文件
-            for html_file in raw_html_dir.rglob(filename):
-                matching_files.append(html_file)
-                logger.debug(f"找到HTML文件: {html_file}")
+            found_files = list(raw_html_dir.rglob(filename))
+            if found_files:
+                # 按修改时间排序，选择最新的文件
+                latest_file = max(found_files, key=lambda x: x.stat().st_mtime)
+                matching_files.append(latest_file)
+                logger.debug(f"找到HTML文件(最新): {latest_file}")
+                if len(found_files) > 1:
+                    logger.debug(f"存在 {len(found_files)} 个同名文件，已选择最新的")
         
         logger.info(f"最终找到 {len(matching_files)} 个可处理的HTML文件")
         return matching_files
@@ -313,13 +320,16 @@ class InfoExtractor:
         # 如果包含目标信息，进行LLM提取
         if has_target_info:
             try:
+                clear_realtime_log()
+                add_realtime_log(f"开始提取信息: {file_path.name}")
                 extracted_info = self._call_llm_by_type(str(content_div), extract_type)
                 if extracted_info:
-                    result["extracted_info"] = extracted_info
+                    result["extracted_info"] = remove_markdown_mark(extracted_info)
                     result["success"] = True
                     logger.info(f"成功提取信息: {file_path.name}")
                 else:
                     logger.warning(f"LLM返回空结果: {file_path.name}")
+                add_realtime_log(f"提取信息完成: {file_path.name}")
             except Exception as e:
                 logger.error(f"LLM调用失败 {file_path}: {e}")
                 result["error"] = str(e)
