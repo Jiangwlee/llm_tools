@@ -1,0 +1,66 @@
+import os
+import logging
+from logging.handlers import RotatingFileHandler
+
+##########################################
+# 日志配置
+##########################################
+
+# 日志格式
+FORMATTER = logging.Formatter('[%(levelname)-8s] - %(asctime)s - %(name)s - %(module)-14s| %(message)s')
+
+# 文件日志格式
+FILE_HANDLER = None
+if os.name == 'posix':
+    os.makedirs('/var/log/llm_tools/', exist_ok=True)
+    LOGFILE = '/var/log/llm_tools/llm_tools.log'
+    FILE_HANDLER = RotatingFileHandler(LOGFILE, maxBytes=1024*1024, backupCount=3)
+    FILE_HANDLER.setFormatter(FORMATTER)
+
+# 命令行日志
+CONSOLE_HANDLER = logging.StreamHandler()
+CONSOLE_HANDLER.setFormatter(FORMATTER)
+CONSOLE_HANDLER.setLevel(logging.DEBUG)
+
+##########################################
+# 存储目录配置
+##########################################
+DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.expanduser("~"), 'llm_tools'))
+BIDDING_DIR = os.path.join(DATA_DIR, 'bidding')
+TGB_DIR = os.path.join(DATA_DIR, 'tgb')
+for dir in [DATA_DIR, BIDDING_DIR, TGB_DIR]:
+    if not os.path.exists(dir):
+        os.mkdir(dir)
+
+##########################################
+# 大模型配置
+##########################################
+BASE_URL = ""
+API_KEY = ""
+MODEL = ""
+
+# Provider Keys
+SILICONFLOW = "SILICONFLOW"
+DEEPSEEK = "DEEPSEEK"
+DOUBAO = "DOUBAO"
+
+PROVIDERS = {
+    DEEPSEEK: {
+        "BASE_URL": "https://api.deepseek.com",
+        "MODEL": "deepseek-chat",
+        "API_KEY": os.getenv("DEEPSEEK_API_KEY", None),
+        "API_KEY_ENV": "DEEPSEEK_API_KEY"
+    },
+    SILICONFLOW: {
+        "BASE_URL": "https://api.siliconflow.cn/v1",
+        "MODEL": "deepseek-ai/DeepSeek-V3",
+        "API_KEY": os.getenv("SILICONFLOW_API_KEY", None),
+        "API_KEY_ENV": "SILICONFLOW_API_KEY"
+    },
+    DOUBAO: {
+        "BASE_URL": "https://ark.cn-beijing.volces.com/api/v3",
+        "MODEL": "doubao-1.5-pro-32k-250115",
+        "API_KEY": os.getenv("DOUBAO_API_KEY", None),
+        "API_KEY_ENV": "DOUBAO_API_KEY"
+    },
+}

@@ -3,10 +3,13 @@ import threading
 import os
 import time
 import queue
-from datetime import date, datetime
+import json
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import logging
 import sys
+from typing import Dict, Any, Optional
+from bs4 import BeautifulSoup
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent.parent
@@ -15,6 +18,7 @@ sys.path.insert(0, str(project_root))
 from biddingcsg.models.config import CrawlerConfig
 from biddingcsg.services.storage import LocalStorageService  
 from biddingcsg.services.crawler import BiddingCrawlerService
+from biddingcsg.services.info_extractor import create_info_extractor
 from biddingcsg.ui.components.log_viewer import ModernLogViewer, get_global_log_viewer, global_log_queue
 
 # 设置日志
@@ -42,7 +46,26 @@ class CrawlerConfigPage:
             'current_session': None,
             'crawler_finished': False,
             'storage_service': None,
-            'show_clear_cache_dialog': False
+            'show_clear_cache_dialog': False,
+            # 价格提取相关状态
+            'extraction_running': False,
+            'extraction_thread': None,
+            'extraction_completed': False,
+            'extraction_results': [],
+            'extraction_logs': [],
+            'stop_extraction': False,
+            # 测试功能相关状态
+            'testing_in_progress': False,
+            'test_results': None,
+            'test_file_path': None,
+            'test_start_time': None,
+            # 文件管理相关状态
+            'show_price_files_dialog': False,
+            'show_cleanup_dialog': False,
+            'selected_files': [],
+            'file_operation_result': None,
+            'last_scan_time': None,
+            'price_files_info': []
         }
         
         for key, default_value in defaults.items():
@@ -76,6 +99,9 @@ class CrawlerConfigPage:
         
         # 启动状态检查片段
         self._crawler_status_fragment()
+        
+        # 启动提取状态检查片段
+        self._extraction_status_fragment()
         
         # 检查是否刚完成
         if st.session_state.get('crawler_finished', False):
@@ -191,14 +217,33 @@ class CrawlerConfigPage:
                     )
             
             # 表单提交按钮
-            submitted = st.form_submit_button(
-                "🚀 开始爬取",
-                type="primary",
-                disabled=st.session_state.crawler_running,
-                use_container_width=True
-            )
+            col1, col2, col3 = st.columns(3)
             
-            # 处理表单提交
+            with col1:
+                submitted = st.form_submit_button(
+                    "🚀 开始爬取",
+                    type="primary",
+                    disabled=st.session_state.crawler_running,
+                    use_container_width=True
+                )
+            
+            with col2:
+                extract_price = st.form_submit_button(
+                    "💰 提取成交价",
+                    disabled=st.session_state.crawler_running or st.session_state.get('extraction_running', False),
+                    use_container_width=True,
+                    help="从已下载的HTML文件中提取价格信息"
+                )
+            
+            with col3:
+                test_extraction = st.form_submit_button(
+                    "🧪 测试价格提取",
+                    disabled=st.session_state.crawler_running or st.session_state.get('extraction_running', False) or st.session_state.get('testing_in_progress', False),
+                    use_container_width=True,
+                    help="快速测试单个文件的价格提取效果"
+                )
+            
+            # 处理爬虫启动
             if submitted and not st.session_state.crawler_running:
                 if self._validate_config(search_keyword, output_directory):
                     config = self._create_config(
@@ -207,6 +252,19 @@ class CrawlerConfigPage:
                         enable_dedup, headless_mode, timeout
                     )
                     self._start_crawler(config)
+            
+            # 处理价格提取
+            if extract_price and not st.session_state.get('extraction_running', False):
+                if self._validate_config(search_keyword, output_directory):
+                    self._start_price_extraction(search_keyword, output_directory)
+            
+            # 处理测试价格提取
+            if test_extraction and not st.session_state.get('testing_in_progress', False):
+                if self._validate_config(search_keyword, output_directory):
+                    self._start_test_price_extraction(search_keyword, output_directory)
+        
+        # 文件管理区域
+        self._render_file_management_section(output_directory)
     
     def _render_realtime_status(self):
         """渲染实时状态组件"""
@@ -821,6 +879,805 @@ class CrawlerConfigPage:
                     
             except Exception as e:
                 st.error(f"获取统计信息失败: {e}")
+    
+    def _start_price_extraction(self, keyword: str, output_directory: str):
+        """启动价格提取任务"""
+        # 重置提取状态
+        st.session_state.extraction_running = True
+        st.session_state.extraction_completed = False
+        st.session_state.extraction_results = []
+        st.session_state.extraction_logs = []
+        st.session_state.stop_extraction = False
+        
+        # 检查HTML目录是否存在
+        html_dir = Path(output_directory) / "raw_html"
+        if not html_dir.exists():
+            st.error(f"❌ HTML文件目录不存在: {html_dir}")
+            st.session_state.extraction_running = False
+            return
+        
+        ModernLogViewer.add_log_background(f"🚀 开始从 {html_dir} 中提取 '{keyword}' 相关的价格信息...", "INFO")
+        
+        def progress_callback(current, total, message):
+            """进度更新回调"""
+            # 通过session state共享进度信息
+            st.session_state.extraction_progress = {
+                'current': current,
+                'total': total,
+                'message': message,
+                'percentage': (current / total * 100) if total > 0 else 0
+            }
+        
+        def log_callback(message):
+            """日志更新回调"""
+            ModernLogViewer.add_log_background(message, "INFO")
+        
+        def extraction_worker():
+            """后台提取工作线程"""
+            try:
+                # 创建提取器
+                extractor = create_info_extractor(str(html_dir))
+                
+                # 执行批量提取
+                results = extractor.extract_info_batch(
+                    keyword=keyword,
+                    extract_type="price",
+                    progress_callback=progress_callback,
+                    log_callback=log_callback
+                )
+                
+                # 保存结果
+                if results:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_file = Path(output_directory) / f"price_extraction_{keyword}_{timestamp}.json"
+                    
+                    if extractor.save_results(results, str(output_file)):
+                        ModernLogViewer.add_log_background(f"🎉 提取完成！结果已保存到: {output_file.name}", "SUCCESS")
+                        st.session_state.extraction_results = results
+                        st.session_state.extraction_output_file = str(output_file)
+                    else:
+                        ModernLogViewer.add_log_background("❌ 保存结果文件失败", "ERROR")
+                else:
+                    ModernLogViewer.add_log_background("⚠️ 未找到匹配的价格信息", "WARNING")
+                
+                # 标记完成
+                st.session_state.extraction_completed = True
+                
+            except Exception as e:
+                error_msg = f"❌ 提取过程发生错误: {str(e)}"
+                ModernLogViewer.add_log_background(error_msg, "ERROR")
+                logger.error(f"价格提取异常: {e}")
+            finally:
+                st.session_state.extraction_running = False
+        
+        # 启动后台线程
+        import threading
+        thread = threading.Thread(target=extraction_worker)
+        thread.daemon = True
+        st.session_state.extraction_thread = thread
+        thread.start()
+        
+        st.success("🚀 价格提取任务已启动！请查看日志标签页了解实时进度。")
+    
+    @st.fragment(run_every=2)  # 每2秒检查一次提取状态
+    def _extraction_status_fragment(self):
+        """提取状态检查片段"""
+        if st.session_state.get('extraction_completed', False):
+            # 显示完成结果
+            self._show_extraction_results()
+            # 重置完成状态，避免重复显示
+            st.session_state.extraction_completed = False
+    
+    def _show_extraction_results(self):
+        """显示提取完成的结果"""
+        results = st.session_state.get('extraction_results', [])
+        output_file = st.session_state.get('extraction_output_file', '')
+        
+        if results:
+            st.success("🎉 价格提取任务完成！")
+            
+            # 显示统计信息
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("处理文件数", len(results))
+            with col2:
+                success_count = len([r for r in results if r.get('success', False)])
+                st.metric("成功提取", success_count)
+            with col3:
+                success_rate = (success_count / len(results) * 100) if results else 0
+                st.metric("成功率", f"{success_rate:.1f}%")
+            
+            # 显示下载链接
+            if output_file and Path(output_file).exists():
+                with open(output_file, 'r', encoding='utf-8') as f:
+                    json_data = f.read()
+                
+                st.download_button(
+                    label="📥 下载提取结果",
+                    data=json_data,
+                    file_name=Path(output_file).name,
+                    mime="application/json",
+                    use_container_width=True
+                )
+    
+    def _start_test_price_extraction(self, keyword: str, output_directory: str):
+        """启动测试价格提取功能"""
+        from datetime import datetime
+        
+        # 重置测试状态
+        st.session_state.testing_in_progress = True
+        st.session_state.test_results = None
+        st.session_state.test_file_path = None
+        st.session_state.test_start_time = datetime.now()
+        
+        # 检查HTML目录是否存在
+        html_dir = Path(output_directory) / "raw_html"
+        if not html_dir.exists():
+            st.error(f"❌ HTML文件目录不存在: {html_dir}")
+            st.session_state.testing_in_progress = False
+            return
+        
+        try:
+            ModernLogViewer.add_log_background("🧪 开始测试价格提取功能...", "INFO")
+            
+            # 第1步：文件发现
+            ModernLogViewer.add_log_background(f"📁 扫描目录: {html_dir}", "INFO")
+            ModernLogViewer.add_log_background(f"🔍 搜索关键词: {keyword}", "INFO")
+            
+            test_file = self._find_latest_test_file(html_dir, keyword)
+            
+            if not test_file:
+                ModernLogViewer.add_log_background("❌ 未找到匹配的公示公告文件", "ERROR")
+                st.session_state.testing_in_progress = False
+                return
+            
+            st.session_state.test_file_path = str(test_file)
+            ModernLogViewer.add_log_background(f"📄 选择测试文件: {test_file.name}", "SUCCESS")
+            
+            # 第2步：文件信息展示
+            file_stat = test_file.stat()
+            file_size = file_stat.st_size / 1024  # KB
+            file_time = datetime.fromtimestamp(file_stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            
+            ModernLogViewer.add_log_background(f"📅 文件时间: {file_time}", "INFO")
+            ModernLogViewer.add_log_background(f"📏 文件大小: {file_size:.1f}KB", "INFO")
+            
+            # 第3步：文件处理
+            ModernLogViewer.add_log_background("📝 开始解析HTML文件...", "INFO")
+            
+            test_result = self._process_test_file(test_file, "price", keyword)
+            
+            if test_result:
+                st.session_state.test_results = test_result
+                
+                # 计算处理时间
+                processing_time = (datetime.now() - st.session_state.test_start_time).total_seconds()
+                
+                ModernLogViewer.add_log_background(f"⏱️ 处理耗时: {processing_time:.1f}秒", "INFO")
+                ModernLogViewer.add_log_background("🎉 测试完成！", "SUCCESS")
+                
+                # 显示结果
+                self._display_test_results(test_result)
+            else:
+                ModernLogViewer.add_log_background("❌ 测试处理失败", "ERROR")
+                
+        except Exception as e:
+            error_msg = f"❌ 测试过程发生错误: {str(e)}"
+            ModernLogViewer.add_log_background(error_msg, "ERROR")
+            logger.error(f"测试价格提取异常: {e}")
+        finally:
+            st.session_state.testing_in_progress = False
+    
+    def _find_latest_test_file(self, html_dir: Path, keyword: str) -> Optional[Path]:
+        """找到最新的匹配测试文件"""
+        try:
+            matching_files = []
+            
+            # 递归查找所有HTML文件
+            for html_file in html_dir.rglob("*.html"):
+                # 检查文件名是否以"公示公告"开头
+                if html_file.name.startswith("公示公告"):
+                    try:
+                        # 检查文件内容是否包含关键词
+                        with open(html_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            if keyword.lower() in content.lower():
+                                matching_files.append(html_file)
+                                ModernLogViewer.add_log_background(f"  ✅ 找到匹配文件: {html_file.name}", "DEBUG")
+                    except Exception as e:
+                        ModernLogViewer.add_log_background(f"  ❌ 读取文件失败 {html_file.name}: {e}", "WARNING")
+                        continue
+            
+            if not matching_files:
+                ModernLogViewer.add_log_background("⚠️ 未找到包含关键词的公示公告文件", "WARNING")
+                return None
+            
+            ModernLogViewer.add_log_background(f"📊 找到 {len(matching_files)} 个匹配的公示公告文件", "INFO")
+            
+            # 按修改时间排序，选择最新的
+            latest_file = max(matching_files, key=lambda f: f.stat().st_mtime)
+            
+            ModernLogViewer.add_log_background(f"🎯 选择最新文件: {latest_file.name}", "SUCCESS")
+            return latest_file
+            
+        except Exception as e:
+            ModernLogViewer.add_log_background(f"❌ 文件扫描失败: {e}", "ERROR")
+            return None
+    
+    def _process_test_file(self, file_path: Path, extract_type: str, keyword: str) -> Optional[Dict[str, Any]]:
+        """处理单个测试文件"""
+        try:
+            # 读取HTML文件
+            with open(file_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            # 解析HTML
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # 提取基本信息
+            title = self._extract_title_from_soup(soup)
+            date = self._extract_date_from_soup(soup)
+            
+            ModernLogViewer.add_log_background(f"📝 文件标题: {title}", "INFO")
+            ModernLogViewer.add_log_background(f"📅 公告日期: {date}", "INFO")
+            
+            # 查找内容区域
+            content_div = soup.find('div', class_='Content')
+            if not content_div:
+                content_div = soup.find('body') or soup
+            
+            # 检查是否包含价格信息
+            has_price_info = self._check_price_info(content_div)
+            
+            if has_price_info:
+                ModernLogViewer.add_log_background("✅ 检测到价格相关信息", "SUCCESS")
+            else:
+                ModernLogViewer.add_log_background("⚠️ 未检测到明显的价格信息", "WARNING")
+            
+            # 调用LLM进行提取
+            ModernLogViewer.add_log_background("🤖 调用LLM进行价格信息提取...", "INFO")
+            
+            from biddingcsg.llm.chat import LLMHelper
+            
+            extracted_info = None
+            if extract_type == "price":
+                extracted_info = LLMHelper.llm_summary(str(content_div))
+            
+            if extracted_info:
+                ModernLogViewer.add_log_background("✅ LLM提取完成", "SUCCESS")
+                # 显示提取结果的前200个字符
+                preview = extracted_info[:200] + "..." if len(extracted_info) > 200 else extracted_info
+                ModernLogViewer.add_log_background(f"💰 提取结果预览: {preview}", "INFO")
+            else:
+                ModernLogViewer.add_log_background("❌ LLM提取失败或返回空结果", "ERROR")
+            
+            # 构建结果
+            result = {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "title": title,
+                "date": date,
+                "keyword": keyword,
+                "extract_type": extract_type,
+                "has_price_info": has_price_info,
+                "success": extracted_info is not None,
+                "extracted_info": extracted_info,
+                "processed_at": datetime.now().isoformat()
+            }
+            
+            return result
+            
+        except Exception as e:
+            ModernLogViewer.add_log_background(f"❌ 文件处理失败: {e}", "ERROR")
+            return None
+    
+    def _extract_title_from_soup(self, soup: BeautifulSoup) -> str:
+        """从BeautifulSoup对象中提取标题"""
+        title_selectors = ['h1.s-title', 'h1', 'title', '.title', '.article-title']
+        
+        for selector in title_selectors:
+            title_tag = soup.select_one(selector)
+            if title_tag and title_tag.get_text(strip=True):
+                return title_tag.get_text(strip=True)
+        
+        return "未找到标题"
+    
+    def _extract_date_from_soup(self, soup: BeautifulSoup) -> str:
+        """从BeautifulSoup对象中提取日期"""
+        date_selectors = ['div.s-date', '.date', '.publish-date', '.article-date']
+        
+        for selector in date_selectors:
+            date_tag = soup.select_one(selector)
+            if date_tag and date_tag.get_text(strip=True):
+                return date_tag.get_text(strip=True)
+        
+        # 尝试从文本中提取日期
+        import re
+        date_pattern = r'\d{4}[-年]\d{1,2}[-月]\d{1,2}[日]?'
+        text_content = soup.get_text()
+        date_match = re.search(date_pattern, text_content)
+        if date_match:
+            return date_match.group()
+        
+        return "未找到日期"
+    
+    def _check_price_info(self, content_div) -> bool:
+        """检查内容是否包含价格信息"""
+        try:
+            # 检查是否包含投标报价相关关键词
+            price_keywords = ['>投标报价<', '投标报价', '中标价', '成交价', '金额', '万元', '元整']
+            content_text = str(content_div)
+            
+            for keyword in price_keywords:
+                if keyword in content_text:
+                    return True
+            return False
+        except Exception:
+            return False
+    
+    def _display_test_results(self, test_result: Dict[str, Any]):
+        """在UI中显示测试结果"""
+        if not test_result:
+            return
+        
+        # 在日志中显示详细结果
+        ModernLogViewer.add_log_background("📊 === 测试结果详情 ===", "INFO")
+        ModernLogViewer.add_log_background(f"📁 文件: {test_result['file_name']}", "INFO")
+        ModernLogViewer.add_log_background(f"📝 标题: {test_result['title']}", "INFO")
+        ModernLogViewer.add_log_background(f"📅 日期: {test_result['date']}", "INFO")
+        ModernLogViewer.add_log_background(f"🎯 关键词: {test_result['keyword']}", "INFO")
+        ModernLogViewer.add_log_background(f"✅ 成功: {'是' if test_result['success'] else '否'}", "INFO")
+        ModernLogViewer.add_log_background(f"🔍 包含价格信息: {'是' if test_result['has_price_info'] else '否'}", "INFO")
+        
+        if test_result['extracted_info']:
+            # 将提取结果按行分割并逐行输出到日志
+            extracted_lines = test_result['extracted_info'].split('\n')
+            ModernLogViewer.add_log_background("💰 === LLM提取结果 ===", "SUCCESS")
+            for line in extracted_lines[:10]:  # 只显示前10行
+                if line.strip():
+                    ModernLogViewer.add_log_background(f"  {line.strip()}", "INFO")
+            
+            if len(extracted_lines) > 10:
+                ModernLogViewer.add_log_background(f"  ... (还有 {len(extracted_lines) - 10} 行)", "INFO")
+        
+        ModernLogViewer.add_log_background("📊 === 测试结果结束 ===", "INFO")
+    
+    def _render_file_management_section(self, output_directory: str):
+        """渲染文件管理区域"""
+        st.markdown("---")
+        st.subheader("📁 文件管理")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button(
+                "📁 查看价格文件",
+                use_container_width=True,
+                help="查看和管理已生成的价格提取结果文件"
+            ):
+                st.session_state.show_price_files_dialog = True
+        
+        with col2:
+            if st.button(
+                "📊 文件统计",
+                use_container_width=True,
+                help="显示价格文件的统计信息"
+            ):
+                self._show_file_statistics(output_directory)
+        
+        with col3:
+            if st.button(
+                "🔄 刷新列表",
+                use_container_width=True,
+                help="重新扫描价格文件"
+            ):
+                self._refresh_price_files(output_directory)
+        
+        with col4:
+            if st.button(
+                "🗑️ 清理文件",
+                use_container_width=True,
+                help="批量删除旧的价格文件",
+                type="secondary"
+            ):
+                st.session_state.show_cleanup_dialog = True
+        
+        # 显示操作结果
+        if st.session_state.file_operation_result:
+            st.success(st.session_state.file_operation_result)
+            st.session_state.file_operation_result = None
+        
+        # 渲染价格文件管理弹窗
+        self._render_price_files_dialog(output_directory)
+        
+        # 渲染清理文件弹窗
+        self._render_cleanup_dialog(output_directory)
+    
+    def _scan_price_files(self, output_directory: str) -> list:
+        """扫描价格文件"""
+        try:
+            output_path = Path(output_directory)
+            if not output_path.exists():
+                return []
+            
+            files_info = []
+            
+            # 查找所有价格提取结果文件
+            for file_path in output_path.glob("price_extraction_*.json"):
+                try:
+                    stat = file_path.stat()
+                    file_size = stat.st_size
+                    file_time = datetime.fromtimestamp(stat.st_mtime)
+                    
+                    # 尝试读取文件内容获取更多信息
+                    file_info = {
+                        'path': str(file_path),
+                        'name': file_path.name,
+                        'size': file_size,
+                        'size_mb': file_size / (1024 * 1024),
+                        'created_time': file_time,
+                        'formatted_time': file_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'total_files': 0,
+                        'successful_extractions': 0,
+                        'keyword': 'unknown'
+                    }
+                    
+                    # 解析JSON文件获取详细信息
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            file_info.update({
+                                'total_files': data.get('total_files', 0),
+                                'successful_extractions': data.get('successful_extractions', 0),
+                                'extraction_time': data.get('extraction_time', ''),
+                                'success_rate': (data.get('successful_extractions', 0) / max(data.get('total_files', 1), 1)) * 100
+                            })
+                            
+                            # 从文件名中提取关键词
+                            name_parts = file_path.stem.split('_')
+                            if len(name_parts) >= 3:
+                                file_info['keyword'] = name_parts[2]
+                    except (json.JSONDecodeError, Exception):
+                        pass
+                    
+                    files_info.append(file_info)
+                    
+                except Exception as e:
+                    logger.error(f"读取文件信息失败 {file_path}: {e}")
+                    continue
+            
+            # 按创建时间倒序排列
+            files_info.sort(key=lambda x: x['created_time'], reverse=True)
+            
+            st.session_state.price_files_info = files_info
+            st.session_state.last_scan_time = datetime.now()
+            
+            return files_info
+            
+        except Exception as e:
+            logger.error(f"扫描价格文件失败: {e}")
+            return []
+    
+    def _render_price_files_dialog(self, output_directory: str):
+        """渲染价格文件管理弹窗"""
+        if st.session_state.get('show_price_files_dialog', False):
+            
+            @st.dialog("📁 价格文件管理", width="large")
+            def price_files_dialog():
+                try:
+                    # 扫描文件
+                    files_info = self._scan_price_files(output_directory)
+                    
+                    if not files_info:
+                        st.warning("📭 未找到任何价格提取结果文件")
+                        st.info("💡 提示：请先执行价格提取操作生成结果文件")
+                        
+                        if st.button("关闭", use_container_width=True):
+                            st.session_state.show_price_files_dialog = False
+                            st.rerun()
+                        return
+                    
+                    # 显示统计信息
+                    total_files = len(files_info)
+                    total_size = sum(f['size'] for f in files_info)
+                    latest_file = files_info[0]['formatted_time'] if files_info else "无"
+                    
+                    st.markdown("#### 📊 统计信息")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("总文件数", f"{total_files} 个")
+                    with col2:
+                        st.metric("总大小", f"{total_size / (1024*1024):.1f} MB")
+                    with col3:
+                        st.metric("最新文件", latest_file.split()[0])  # 只显示日期
+                    
+                    st.markdown("#### 📋 文件列表")
+                    
+                    # 文件列表表格
+                    for i, file_info in enumerate(files_info):
+                        with st.container():
+                            col1, col2, col3, col4, col5 = st.columns([0.5, 3, 1, 1.5, 2])
+                            
+                            with col1:
+                                selected = st.checkbox("", key=f"file_select_{i}", label_visibility="collapsed")
+                                if selected and file_info['path'] not in st.session_state.selected_files:
+                                    st.session_state.selected_files.append(file_info['path'])
+                                elif not selected and file_info['path'] in st.session_state.selected_files:
+                                    st.session_state.selected_files.remove(file_info['path'])
+                            
+                            with col2:
+                                st.write(f"**{file_info['name']}**")
+                                st.caption(f"关键词: {file_info['keyword']} | 成功率: {file_info.get('success_rate', 0):.1f}%")
+                            
+                            with col3:
+                                st.write(f"{file_info['size_mb']:.1f}MB")
+                            
+                            with col4:
+                                st.write(file_info['formatted_time'].split()[0])  # 只显示日期
+                            
+                            with col5:
+                                btn_col1, btn_col2, btn_col3 = st.columns(3)
+                                
+                                with btn_col1:
+                                    if st.button("📥", key=f"download_{i}", help="下载"):
+                                        self._download_price_file(file_info)
+                                
+                                with btn_col2:
+                                    if st.button("👁️", key=f"preview_{i}", help="预览"):
+                                        self._preview_price_file(file_info)
+                                
+                                with btn_col3:
+                                    if st.button("🗑️", key=f"delete_{i}", help="删除"):
+                                        if st.button(f"确认删除 {file_info['name']}?", key=f"confirm_delete_{i}"):
+                                            self._delete_price_file(file_info['path'])
+                                            st.rerun()
+                    
+                    st.markdown("---")
+                    
+                    # 批量操作
+                    st.markdown("#### 🔧 批量操作")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        if st.button("全选", use_container_width=True):
+                            st.session_state.selected_files = [f['path'] for f in files_info]
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("清空选择", use_container_width=True):
+                            st.session_state.selected_files = []
+                            st.rerun()
+                    
+                    with col3:
+                        selected_count = len(st.session_state.selected_files)
+                        if st.button(f"下载选中({selected_count})", disabled=selected_count == 0, use_container_width=True):
+                            self._download_selected_files()
+                    
+                    with col4:
+                        if st.button(f"删除选中({selected_count})", disabled=selected_count == 0, use_container_width=True, type="secondary"):
+                            if st.button("确认删除选中的文件?", key="confirm_batch_delete"):
+                                self._delete_selected_files()
+                                st.rerun()
+                    
+                    # 关闭按钮
+                    if st.button("关闭", use_container_width=True):
+                        st.session_state.show_price_files_dialog = False
+                        st.session_state.selected_files = []
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"文件管理出错: {e}")
+                    logger.error(f"文件管理异常: {e}")
+            
+            # 显示弹窗
+            price_files_dialog()
+    
+    def _download_price_file(self, file_info: dict):
+        """下载单个价格文件"""
+        try:
+            with open(file_info['path'], 'r', encoding='utf-8') as f:
+                file_content = f.read()
+            
+            st.download_button(
+                label=f"📥 下载 {file_info['name']}",
+                data=file_content,
+                file_name=file_info['name'],
+                mime="application/json",
+                key=f"download_btn_{file_info['name']}",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"下载文件失败: {e}")
+    
+    def _preview_price_file(self, file_info: dict):
+        """预览价格文件内容"""
+        try:
+            with open(file_info['path'], 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            st.markdown(f"#### 📄 文件预览: {file_info['name']}")
+            
+            # 基本信息
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("处理文件数", data.get('total_files', 0))
+            with col2:
+                st.metric("成功提取", data.get('successful_extractions', 0))
+            with col3:
+                success_rate = (data.get('successful_extractions', 0) / max(data.get('total_files', 1), 1)) * 100
+                st.metric("成功率", f"{success_rate:.1f}%")
+            
+            # JSON内容预览
+            st.markdown("**JSON内容预览:**")
+            preview_data = {
+                "extraction_time": data.get("extraction_time", ""),
+                "total_files": data.get("total_files", 0),
+                "successful_extractions": data.get("successful_extractions", 0),
+                "results_preview": data.get("results", [])[:3]  # 只显示前3个结果
+            }
+            st.json(preview_data)
+            
+            if len(data.get("results", [])) > 3:
+                st.caption(f"... 还有 {len(data.get('results', [])) - 3} 个结果")
+                
+        except Exception as e:
+            st.error(f"预览文件失败: {e}")
+    
+    def _delete_price_file(self, file_path: str):
+        """删除单个价格文件"""
+        try:
+            Path(file_path).unlink()
+            st.session_state.file_operation_result = f"✅ 文件删除成功: {Path(file_path).name}"
+            ModernLogViewer.add_log_background(f"🗑️ 删除价格文件: {Path(file_path).name}", "INFO")
+        except Exception as e:
+            st.error(f"删除文件失败: {e}")
+    
+    def _show_file_statistics(self, output_directory: str):
+        """显示文件统计信息"""
+        files_info = self._scan_price_files(output_directory)
+        
+        if not files_info:
+            st.info("📭 暂无价格文件统计信息")
+            return
+        
+        # 显示详细统计
+        total_files = len(files_info)
+        total_size = sum(f['size'] for f in files_info)
+        total_extractions = sum(f.get('total_files', 0) for f in files_info)
+        total_success = sum(f.get('successful_extractions', 0) for f in files_info)
+        avg_success_rate = (total_success / max(total_extractions, 1)) * 100
+        
+        st.markdown("#### 📊 价格文件统计")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("结果文件总数", f"{total_files} 个")
+            st.metric("累计处理文件", f"{total_extractions} 个")
+        
+        with col2:
+            st.metric("存储空间占用", f"{total_size / (1024*1024):.1f} MB")
+            st.metric("平均成功率", f"{avg_success_rate:.1f}%")
+        
+        # 按关键词分组统计
+        if files_info:
+            keyword_stats = {}
+            for file_info in files_info:
+                keyword = file_info.get('keyword', 'unknown')
+                if keyword not in keyword_stats:
+                    keyword_stats[keyword] = {'count': 0, 'size': 0}
+                keyword_stats[keyword]['count'] += 1
+                keyword_stats[keyword]['size'] += file_info['size']
+            
+            st.markdown("**按关键词分组:**")
+            for keyword, stats in keyword_stats.items():
+                st.write(f"• **{keyword}**: {stats['count']} 个文件, {stats['size']/(1024*1024):.1f}MB")
+    
+    def _refresh_price_files(self, output_directory: str):
+        """刷新价格文件列表"""
+        files_info = self._scan_price_files(output_directory)
+        st.session_state.file_operation_result = f"🔄 已刷新文件列表，找到 {len(files_info)} 个价格文件"
+    
+    def _render_cleanup_dialog(self, output_directory: str):
+        """渲染清理文件弹窗"""
+        if st.session_state.get('show_cleanup_dialog', False):
+            
+            @st.dialog("🗑️ 批量清理价格文件", width="large")
+            def cleanup_dialog():
+                st.warning("⚠️ **此操作将永久删除选中的价格文件！**")
+                
+                files_info = self._scan_price_files(output_directory)
+                if not files_info:
+                    st.info("📭 没有可清理的价格文件")
+                    if st.button("关闭"):
+                        st.session_state.show_cleanup_dialog = False
+                        st.rerun()
+                    return
+                
+                # 按时间分组显示
+                st.markdown("#### 🗂️ 选择要清理的文件")
+                
+                # 提供快速选择选项
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    days_7 = st.button("清理7天前", use_container_width=True)
+                with col2:
+                    days_30 = st.button("清理30天前", use_container_width=True)
+                with col3:
+                    all_files = st.button("全部清理", use_container_width=True)
+                
+                # 文件列表
+                selected_for_cleanup = []
+                cutoff_date = None
+                
+                if days_7:
+                    cutoff_date = datetime.now() - timedelta(days=7)
+                elif days_30:
+                    cutoff_date = datetime.now() - timedelta(days=30)
+                elif all_files:
+                    cutoff_date = datetime.now()
+                
+                for i, file_info in enumerate(files_info):
+                    should_select = cutoff_date and file_info['created_time'] < cutoff_date
+                    
+                    if st.checkbox(
+                        f"{file_info['name']} ({file_info['formatted_time']}, {file_info['size_mb']:.1f}MB)",
+                        value=should_select,
+                        key=f"cleanup_select_{i}"
+                    ):
+                        selected_for_cleanup.append(file_info['path'])
+                
+                st.markdown("---")
+                
+                # 确认清理
+                if selected_for_cleanup:
+                    st.warning(f"将删除 {len(selected_for_cleanup)} 个文件")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("确认删除", type="primary", use_container_width=True):
+                            deleted_count = 0
+                            for file_path in selected_for_cleanup:
+                                try:
+                                    Path(file_path).unlink()
+                                    deleted_count += 1
+                                except Exception as e:
+                                    st.error(f"删除 {Path(file_path).name} 失败: {e}")
+                            
+                            st.success(f"✅ 成功删除 {deleted_count} 个文件")
+                            ModernLogViewer.add_log_background(f"🗑️ 批量删除 {deleted_count} 个价格文件", "INFO")
+                            st.session_state.show_cleanup_dialog = False
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("取消", use_container_width=True):
+                            st.session_state.show_cleanup_dialog = False
+                            st.rerun()
+                else:
+                    if st.button("关闭", use_container_width=True):
+                        st.session_state.show_cleanup_dialog = False
+                        st.rerun()
+            
+            cleanup_dialog()
+    
+    def _download_selected_files(self):
+        """下载选中的文件"""
+        # 这里可以实现打包下载或逐个下载
+        st.info("📦 批量下载功能开发中，请使用单文件下载")
+    
+    def _delete_selected_files(self):
+        """删除选中的文件"""
+        deleted_count = 0
+        for file_path in st.session_state.selected_files:
+            try:
+                Path(file_path).unlink()
+                deleted_count += 1
+            except Exception as e:
+                st.error(f"删除文件失败: {e}")
+        
+        st.session_state.file_operation_result = f"✅ 成功删除 {deleted_count} 个文件"
+        st.session_state.selected_files = []
+        ModernLogViewer.add_log_background(f"🗑️ 批量删除 {deleted_count} 个价格文件", "INFO")
 
 def main():
     """主函数"""

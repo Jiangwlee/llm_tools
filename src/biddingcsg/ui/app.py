@@ -20,6 +20,7 @@ sys.path.insert(0, str(project_root))
 
 # 使用绝对导入
 from src.biddingcsg.ui.pages.crawler_config import CrawlerConfigPage
+from src.biddingcsg.ui.components.model_selector import get_model_selector
 
 def main():
     """应用主函数"""
@@ -70,9 +71,13 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # 侧边栏（如果需要的话）
+    # 侧边栏
     with st.sidebar:
         st.markdown("### 🔧 工具选项")
+        
+        # 模型配置区域
+        model_selector = get_model_selector()
+        model_selector.render_sidebar_selector()
         
         # 应用信息
         st.markdown("---")
@@ -86,6 +91,7 @@ def main():
         - 实时日志显示爬取进度
         - 本地文件存储管理
         - 支持多种公告类型
+        - AI模型集成分析功能
         
         📁 **文件结构:**
         - `raw_html/` - 原始HTML文件
@@ -99,24 +105,37 @@ def main():
         
         with st.expander("📖 快速开始"):
             st.markdown("""
-            1. **配置搜索参数**
+            1. **配置AI模型**
+               - 选择要使用的AI模型
+               - 测试模型连接状态
+               - 确保API密钥已配置
+            
+            2. **配置搜索参数**
                - 输入关键词（如公司名称）
                - 设置最大爬取页数
                - 选择公告类型
             
-            2. **设置输出目录**
+            3. **设置输出目录**
                - 默认保存到 `output/bidding_data`
                - 可自定义输出路径
             
-            3. **启动爬取**
+            4. **启动爬取**
                - 点击"开始爬取"按钮
                - 实时查看爬取日志
                - 等待任务完成
             
-            4. **查看结果**
+            5. **查看结果**
                - HTML文件按日期分目录保存
                - 元数据保存为JSON格式
                - 支持导出日志文件
+            """)
+        
+        with st.expander("🤖 AI模型说明"):
+            st.markdown("""
+            - **DeepSeek**: 高性能通用模型，适合复杂分析
+            - **豆包**: 字节跳动模型，中文理解能力强
+            - **硅基流动**: 提供多种开源模型选择
+            - **API密钥**: 需要在环境变量中配置相应的密钥
             """)
         
         with st.expander("⚙️ 高级设置说明"):
@@ -133,8 +152,8 @@ def main():
             - 不要设置过小的请求间隔
             - 大量爬取时建议在低峰期进行
             - 及时清理旧的HTML文件释放空间
+            - 确保AI模型API密钥安全保存
             """)
-    
     # 主页面内容
     try:
         # 创建并渲染爬虫配置页面

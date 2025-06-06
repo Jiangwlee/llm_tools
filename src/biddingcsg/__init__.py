@@ -14,7 +14,9 @@ __description__ = "招标公告数据爬虫工具"
 from .models.config import CrawlerConfig, CrawlResult, CrawlSession
 from .services.storage import LocalStorageService
 from .services.crawler import BiddingCrawlerService
+from .services.info_extractor import InfoExtractor, create_info_extractor
 from .ui.components.log_viewer import LogViewer, ProgressViewer
+from .ui.components.model_selector import ModelSelector, get_model_selector
 from .ui.pages.crawler_config import CrawlerConfigPage
 
 # 版本信息
@@ -78,10 +80,14 @@ __all__ = [
     # 服务组件
     'LocalStorageService',
     'BiddingCrawlerService',
+    'InfoExtractor',
+    'create_info_extractor',
     
     # UI组件
     'LogViewer',
     'ProgressViewer',
+    'ModelSelector',
+    'get_model_selector',
     'CrawlerConfigPage',
     
     # 便捷函数

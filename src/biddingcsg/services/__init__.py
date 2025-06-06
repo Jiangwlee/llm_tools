@@ -13,6 +13,9 @@ from .database_storage import DatabaseStorageService
 # 爬虫服务
 from .crawler import BiddingCrawlerService
 
+# 信息提取服务
+from .info_extractor import InfoExtractor, create_info_extractor
+
 # 暂时注释导入，等实现后再启用
 # from .llm import LLMService
 # from .status import StatusService
@@ -25,7 +28,11 @@ __all__ = [
     "DatabaseStorageService",
     
     # 爬虫服务
-    "CrawlerService",
+    "BiddingCrawlerService",
+    
+    # 信息提取服务
+    "InfoExtractor",
+    "create_info_extractor",
     
     # 未来的服务
     # "LLMService",
