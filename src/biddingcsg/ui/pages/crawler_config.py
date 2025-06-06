@@ -19,7 +19,7 @@ from biddingcsg.models.config import CrawlerConfig
 from biddingcsg.services.storage import LocalStorageService  
 from biddingcsg.services.crawler import BiddingCrawlerService
 from biddingcsg.services.info_extractor import create_info_extractor
-from biddingcsg.ui.components.log_viewer import ModernLogViewer, get_global_log_viewer, global_log_queue
+# 删除了日志查看器相关导入
 from biddingcsg.config.paths import BiddingPaths, FilePatterns, FileSizes
 
 # 设置日志
@@ -32,9 +32,6 @@ class CrawlerConfigPage:
     def __init__(self):
         """初始化页面"""
         self._init_session_state()
-        
-        # 使用全局日志查看器实例
-        self.log_viewer = get_global_log_viewer()
         
         # 进度相关
         self._init_progress_state()
@@ -83,9 +80,8 @@ class CrawlerConfigPage:
                 'percentage': 0.0
             }
     
-    @st.fragment(run_every=5)  # 降低频率到5秒，减少fragment冲突
     def _crawler_status_fragment(self):
-        """爬虫状态检查片段 - 只检查状态，不触发UI刷新"""
+        """爬虫状态检查 - 移除了fragment装饰器"""
         if st.session_state.crawler_running:
             # 检查线程是否还活着
             if st.session_state.crawler_thread and not st.session_state.crawler_thread.is_alive():
@@ -103,9 +99,7 @@ class CrawlerConfigPage:
             # 状态检查fragments - 低频运行
             self._crawler_status_fragment()
             self._extraction_status_fragment()
-            # 日志刷新fragment - 只在有需要时运行
-            if st.session_state.get('crawler_running', False) or global_log_queue.qsize() > 0:
-                self._log_refresh_fragment()
+            # 删除了日志刷新fragment功能
         except Exception as e:
             # 如果fragment出错，静默处理，避免影响主界面
             logger.debug(f"Fragment运行错误 (已忽略): {e}")
@@ -114,18 +108,15 @@ class CrawlerConfigPage:
         if st.session_state.get('crawler_finished', False):
             st.session_state.crawler_finished = False
             st.balloons()
-            st.success("🎉 爬虫任务已完成！请查看下方日志了解详情。")
+            st.success("🎉 爬虫任务已完成！请查看结果统计标签页了解详情。")
         
         # 主要布局
-        tab1, tab2, tab3 = st.tabs(["⚙️ 配置与控制", "📝 实时日志", "📊 结果统计"])
+        tab1, tab2 = st.tabs(["⚙️ 配置与控制", "📊 结果统计"])
         
         with tab1:
             self._render_config_tab()
         
         with tab2:
-            self._render_log_tab()
-        
-        with tab3:
             self._render_stats_tab()
         
         # 清空缓存弹窗对话框
@@ -320,8 +311,8 @@ class CrawlerConfigPage:
             st.metric("日志条数", log_count)
         
         with stat_col2:
-            queue_size = global_log_queue.qsize()
-            st.metric("待处理", queue_size)
+            # 删除了队列大小统计
+            st.metric("待处理", 0)
         
         # 控制按钮
         st.markdown("#### 🎮 控制操作")
@@ -342,7 +333,7 @@ class CrawlerConfigPage:
                 "🗑️ 清空日志",
                 use_container_width=True
             ):
-                self.log_viewer.clear_logs()
+                # 删除了日志查看器调用
                 st.success("日志已清空")
         
         with ctrl_col3:
@@ -354,192 +345,8 @@ class CrawlerConfigPage:
             ):
                 st.session_state.show_clear_cache_dialog = True
         
-        # 实时日志显示区域
-        st.markdown("#### 📝 实时日志输出")
-        
-        if st.session_state.get('log_entries'):
-            # 显示最新的日志，最新的在上方
-            display_logs = list(reversed(st.session_state.log_entries[-15:]))  # 显示最近15条
-            
-            # 安全的日志格式处理
-            log_lines = []
-            for entry in display_logs:
-                try:
-                    if isinstance(entry, dict) and 'formatted' in entry:
-                        log_lines.append(entry['formatted'])
-                    elif isinstance(entry, (tuple, list)) and len(entry) >= 2:
-                        # 处理元组格式的日志条目
-                        message, level = entry[0], entry[1]
-                        # 使用日志条目的实际时间戳或当前时间
-                        if isinstance(entry, dict) and 'timestamp' in entry:
-                            timestamp = entry['timestamp'].strftime('%H:%M:%S')
-                        else:
-                            timestamp = datetime.now().strftime('%H:%M:%S')
-                        
-                        level_config = {
-                            "INFO": "ℹ️", "WARNING": "⚠️", "ERROR": "❌", 
-                            "SUCCESS": "✅", "DEBUG": "🔍"
-                        }
-                        icon = level_config.get(level, "ℹ️")
-                        log_lines.append(f"[{timestamp}] {icon} {message}")
-                    else:
-                        log_lines.append(str(entry))
-                except Exception:
-                    log_lines.append(f"[Error] 日志格式错误")
-            
-            log_text = '\n'.join(log_lines)
-            
-            # 设置白色背景
-            st.markdown("""
-            <style>
-            /* 实时日志输出区域白色背景 */
-            div[data-testid="stTextArea"] textarea {
-                background-color: #ffffff !important;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            
-            st.text_area(
-                "实时日志",
-                value=log_text,
-                height=350,
-                disabled=True,
-                key="realtime_log_display",
-                help="显示最近15条日志（最新在上方）",
-                label_visibility="collapsed"
-            )
-            
-            # 实时统计和提示
-            log_total = len(st.session_state.log_entries)
-            st.caption(f"📊 显示最近 15 条日志，总计 {log_total} 条 | 💡 查看完整日志请切换到 '📝 实时日志' 标签页")
-        else:
-            # 空日志状态也设置白色背景
-            st.markdown("""
-            <style>
-            /* 空日志显示区域白色背景 */
-            div[data-testid="stTextArea"] textarea {
-                background-color: #ffffff !important;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            
-            st.text_area(
-                "实时日志",
-                value="📝 等待日志输出...\n\n🔄 启动爬虫后日志将在此处实时显示\n📋 最新的日志会显示在最上方\n⏱️ 日志将每秒自动刷新",
-                height=350,
-                disabled=True,
-                key="empty_log_display",
-                label_visibility="collapsed"
-            )
     
-    def _render_log_tab(self):
-        """渲染日志标签页"""
-        st.markdown("### 📝 实时日志监控")
-        
-        # 显示调试信息
-        st.info(f"🔧 调试信息: Fragment刷新计数 = {st.session_state.get('fragment_counter', 0)}, 队列大小 = {global_log_queue.qsize()}, 日志条数 = {len(st.session_state.get('log_entries', []))}")
-        
-        # 日志刷新由顶层render()统一管理，避免重复调用
-        
-        # 添加手动测试按钮
-        if st.button("🧪 添加测试日志到队列"):
-            ModernLogViewer.add_log_background("🧪 手动测试日志", "INFO")
-            st.success("已添加测试日志")
-        
-        # 使用现代化日志查看器，禁用内部的自动刷新避免重复
-        self.log_viewer.render_modern(height=500, show_controls=True, disable_auto_refresh=True)
-        
-        # 额外的日志操作
-        st.markdown("---")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("📥 导出日志", use_container_width=True):
-                self.log_viewer.export_logs()
-        
-        with col2:
-            # 紧凑显示开关
-            if st.button("📋 紧凑显示", use_container_width=True):
-                st.markdown("#### 最近日志（紧凑模式）")
-                self.log_viewer.render_compact(max_display=5)
-        
-        with col3:
-            # 刷新统计
-            log_count = len(st.session_state.get('log_entries', []))
-            queue_size = global_log_queue.qsize()
-            st.metric("总日志/队列", f"{log_count}/{queue_size}")
-        
-        # 显示最近的几条日志预览
-        if st.session_state.get('log_entries'):
-            st.markdown("#### 📋 最近日志预览")
-            recent_logs = st.session_state.log_entries[-3:]  # 显示最近3条
-            for entry in reversed(recent_logs):  # 最新的在上面
-                try:
-                    if isinstance(entry, dict) and 'formatted' in entry:
-                        st.text(entry['formatted'])
-                    elif isinstance(entry, (tuple, list)) and len(entry) >= 2:
-                        message, level = entry[0], entry[1]
-                        timestamp = datetime.now().strftime('%H:%M:%S')
-                        level_config = {
-                            "INFO": "ℹ️", "WARNING": "⚠️", "ERROR": "❌", 
-                            "SUCCESS": "✅", "DEBUG": "🔍"
-                        }
-                        icon = level_config.get(level, "ℹ️")
-                        st.text(f"[{timestamp}] {icon} {message}")
-                    else:
-                        st.text(str(entry))
-                except Exception:
-                    st.text(f"[Error] 无法显示日志: {entry}")
-            
-            st.markdown("💡 **提示**: 切换到 '📝 实时日志' 标签查看完整日志")
-    
-    @st.fragment(run_every=2)  # 降低频率到2秒，避免过度刷新
-    def _log_refresh_fragment(self):
-        """实时日志刷新Fragment - 移除强制刷新逻辑，避免fragment冲突"""
-        try:
-            # 初始化刷新控制
-            if 'last_log_refresh' not in st.session_state:
-                st.session_state.last_log_refresh = time.time()
-                
-            current_time = time.time()
-            
-            # 控制最小刷新间隔（2秒），避免过度刷新
-            if current_time - st.session_state.last_log_refresh >= 2.0:
-                # 确保日志查看器的session state已初始化
-                self.log_viewer._init_session_state()
-                
-                # 处理队列中的新日志 - 但不强制刷新UI
-                self._get_new_logs_from_queue()
-                
-                st.session_state.last_log_refresh = current_time
-                    
-        except Exception as e:
-            logger.error(f"日志刷新Fragment错误: {e}")
-    
-    def _get_new_logs_from_queue(self) -> bool:
-        """从队列获取新日志 - 直接实现，参考测试文件"""
-        new_logs_added = False
-        max_logs_per_cycle = 50  # 性能控制
-        
-        try:
-            for _ in range(max_logs_per_cycle):
-                try:
-                    # 非阻塞获取
-                    message, level = global_log_queue.get_nowait()
-                    
-                    # 使用日志查看器的方法添加到session state
-                    self.log_viewer._add_log_to_session(message, level)
-                    new_logs_added = True
-                    
-                except queue.Empty:
-                    break
-                    
-        except Exception as e:
-            logger.error(f"处理日志队列时出错: {e}")
-            
-        return new_logs_added
-    
+
     def _render_stats_tab(self):
         """渲染统计标签页"""
         st.markdown("### 📊 爬取结果统计")
@@ -657,13 +464,6 @@ class CrawlerConfigPage:
             # 创建爬虫服务
             crawler_service = BiddingCrawlerService(config, storage_service)
             
-            # 日志回调函数
-            def log_callback(message):
-                try:
-                    ModernLogViewer.add_log_background(message, "INFO")
-                except Exception as e:
-                    logger.error(f"日志回调错误: {e}")
-            
             # 进度回调函数
             def progress_callback(current, total, message):
                 try:
@@ -675,11 +475,6 @@ class CrawlerConfigPage:
                         'percentage': percentage
                     })
                     
-                    # 也记录到日志
-                    ModernLogViewer.add_log_background(
-                        f"📊 进度更新: {current}/{total} ({percentage:.1f}%) - {message}",
-                        "INFO"
-                    )
                 except Exception as e:
                     logger.error(f"进度回调错误: {e}")
             
@@ -687,28 +482,23 @@ class CrawlerConfigPage:
             def crawler_worker():
                 try:
                     st.session_state.crawler_running = True
-                    ModernLogViewer.add_log_background("🚀 启动爬虫任务...", "SUCCESS")
+                    # 删除了日志调用
                     
                     session = crawler_service.start_crawling(
-                        progress_callback=progress_callback,
-                        log_callback=log_callback
+                        progress_callback=progress_callback
                     )
                     
                     st.session_state.current_session = session
                     
                     if session.status == "completed":
-                        ModernLogViewer.add_log_background(
-                            f"✅ 爬取完成！共获取 {session.total_items_found} 条记录", 
-                            "SUCCESS"
-                        )
+                        # 删除了日志调用
+                        pass
                     else:
-                        ModernLogViewer.add_log_background(
-                            f"❌ 爬取失败: {session.error_message}", 
-                            "ERROR"
-                        )
+                        # 删除了日志调用
+                        pass
                         
                 except Exception as e:
-                    ModernLogViewer.add_log_background(f"❌ 爬虫执行异常: {e}", "ERROR")
+                    # 删除了日志调用
                     logger.error(f"爬虫执行异常: {e}", exc_info=True)
                 finally:
                     st.session_state.crawler_running = False
@@ -720,18 +510,18 @@ class CrawlerConfigPage:
             crawler_thread.start()
             st.session_state.crawler_thread = crawler_thread
             
-            ModernLogViewer.add_log_background("✅ 爬虫线程已启动", "SUCCESS")
-            st.success("🚀 爬虫已启动！请切换到日志标签页查看实时进度。")
+            # 删除了日志调用
+            st.success("🚀 爬虫已启动！请在结果统计标签页查看进度。")
             
         except Exception as e:
-            ModernLogViewer.add_log_background(f"❌ 启动爬虫失败: {e}", "ERROR")
+            # 删除了日志调用
             logger.error(f"启动爬虫失败: {e}", exc_info=True)
             st.error(f"启动失败: {e}")
     
     def _stop_crawler(self):
         """停止爬虫"""
         if st.session_state.crawler_running:
-            ModernLogViewer.add_log_background("🛑 正在停止爬虫...", "WARNING")
+            # 删除了日志调用
             st.session_state.crawler_running = False
             st.warning("停止信号已发送，爬虫将在安全点停止")
     
@@ -746,7 +536,7 @@ class CrawlerConfigPage:
                     
                     if not storage_service:
                         # 如果没有存储服务实例，创建一个默认的
-                        ModernLogViewer.add_log_background("🔧 创建临时存储服务实例用于清空缓存", "INFO")
+                        # 删除了日志调用
                         
                         # 使用默认配置创建存储服务
                         default_config = CrawlerConfig(
@@ -788,7 +578,7 @@ class CrawlerConfigPage:
                     
                     with col1:
                         if st.button("❌ 取消", use_container_width=True):
-                            ModernLogViewer.add_log_background("📝 用户取消清空操作", "INFO")
+                            # 删除了日志调用
                             st.session_state.show_clear_cache_dialog = False
                             st.rerun()
                     
@@ -802,7 +592,7 @@ class CrawlerConfigPage:
                 except Exception as e:
                     error_msg = f"❌ 对话框错误: {e}"
                     st.error(error_msg)
-                    ModernLogViewer.add_log_background(error_msg, "ERROR")
+                    # 删除了日志调用
                     logger.error(f"清空缓存对话框错误: {e}", exc_info=True)
             
             # 显示对话框
@@ -811,16 +601,16 @@ class CrawlerConfigPage:
     def _execute_clear_cache(self, storage_service):
         """执行清空缓存操作"""
         try:
-            ModernLogViewer.add_log_background("✅ 用户确认清空缓存，开始执行...", "INFO")
+            # 删除了日志调用
             
             # 显示存储服务基础信息（调试用）
-            ModernLogViewer.add_log_background(f"🔍 存储服务实例: {type(storage_service).__name__}", "DEBUG")
-            ModernLogViewer.add_log_background(f"🔍 基础目录: {storage_service.base_dir}", "DEBUG")
-            ModernLogViewer.add_log_background(f"🔍 HTML目录: {storage_service.html_dir}", "DEBUG")
-            ModernLogViewer.add_log_background(f"🔍 元数据目录: {storage_service.metadata_dir}", "DEBUG")
+            # 删除了日志调用
+            # 删除了日志调用
+            # 删除了日志调用
+            # 删除了日志调用
             
             # 执行清空操作
-            ModernLogViewer.add_log_background("🧹 正在执行清空缓存操作...", "WARNING")
+            # 删除了日志调用
             
             stats = storage_service.clear_all_cache()
             
@@ -832,7 +622,7 @@ class CrawlerConfigPage:
                           f" 清理目录 {stats['directories_cleaned']} 个，"
                           f" 总计删除文件 {total_files} 个")
             
-            ModernLogViewer.add_log_background(success_msg, "SUCCESS")
+            # 删除了日志调用
             
             # 在对话框中也显示成功消息
             st.success(f"🎉 缓存清空完成！\n\n"
@@ -844,7 +634,7 @@ class CrawlerConfigPage:
         except Exception as e:
             error_msg = f"❌ 清空缓存失败: {e}"
             st.error(error_msg)
-            ModernLogViewer.add_log_background(error_msg, "ERROR")
+            # 删除了日志调用
             logger.error(f"清空缓存失败: {e}", exc_info=True)
     
     def _show_storage_stats(self):
@@ -913,8 +703,8 @@ class CrawlerConfigPage:
         # 根据模式显示不同的开始消息
         mode_name = "测试" if test_mode else "批量"
         mode_icon = "🧪" if test_mode else "🚀"
-        ModernLogViewer.add_log_background(f"{mode_icon} 开始{mode_name}价格提取 - 关键词: '{keyword}'", "INFO")
-        ModernLogViewer.add_log_background(f"📁 HTML目录: {html_dir}", "INFO")
+        # 删除了日志调用
+        # 删除了日志调用
         
         def progress_callback(current, total, message):
             """进度更新回调"""
@@ -926,132 +716,223 @@ class CrawlerConfigPage:
             }
         
         def log_callback(message):
-            """日志更新回调"""
+            """日志更新回调 - 现在使用标准日志记录"""
             mode_prefix = f"🧪 [测试]" if test_mode else f"🚀 [批量]"
-            ModernLogViewer.add_log_background(f"{mode_prefix} {message}", "INFO")
+            logger.info(f"{mode_prefix} {message}")
         
-        def extraction_worker():
-            """后台提取工作线程"""
-            # 在工作线程内部记录开始时间，避免session state线程同步问题
-            worker_start_time = datetime.now()
+        class ExtractionWorker(threading.Thread):
+            """提取工作线程类 - 正确的线程间通信方式"""
             
-            try:
-                # 创建提取器
-                extractor = create_info_extractor(str(html_dir))
+            def __init__(self):
+                super().__init__(daemon=True)
+                self.start_time = datetime.now()
+                self.test_mode = test_mode
+                self.keyword = keyword
+                self.output_directory = output_directory
+                self.html_dir = html_dir
                 
-                # 如果是测试模式，预先筛选单个文件
-                if test_mode:
-                    log_callback("🔍 测试模式：查找最新匹配文件...")
-                    latest_file = self._find_latest_test_file(html_dir, keyword)
-                    
-                    if not latest_file:
-                        log_callback("❌ 未找到匹配的公示公告文件")
-                        st.session_state.extraction_running = False
-                        st.session_state.testing_in_progress = False
-                        return
-                    
-                    st.session_state.test_file_path = str(latest_file)
-                    log_callback(f"📄 选择测试文件: {latest_file.name}")
-                    
-                    # 显示文件信息
-                    file_stat = latest_file.stat()
-                    file_size = file_stat.st_size / 1024  # KB
-                    file_time = datetime.fromtimestamp(file_stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    log_callback(f"📅 文件时间: {file_time}")
-                    log_callback(f"📏 文件大小: {file_size:.1f}KB")
-                    
-                    # 手动设置扫描结果为单个文件
-                    extractor._manual_file_list = [latest_file]
+                # 线程结果属性 - 主线程可以安全访问
+                self.status = 'running'  # running, completed, failed
+                self.results = []
+                self.output_file = ''
+                self.test_results = None
+                self.test_file_path = ''
+                self.error_message = ''
+                self.processing_time = 0.0
                 
-                # 执行批量提取（测试模式会处理单个文件）
-                results = extractor.extract_info_batch(
-                    keyword=keyword,
-                    extract_type="price",
-                    progress_callback=progress_callback,
-                    log_callback=log_callback
-                )
-                
-                # 保存结果
-                if results:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    # 使用全局路径配置
-                    price_dir = BiddingPaths.get_price_dir(output_directory)
+            def run(self):
+                """线程执行方法 - 只做计算，不访问session_state"""
+                try:
+                    # 创建提取器  
+                    extractor = create_info_extractor(str(self.html_dir))
                     
-                    if test_mode:
-                        output_file = price_dir / FilePatterns.PRICE_EXTRACTION_TEST.format(keyword=keyword, timestamp=timestamp)
-                    else:
-                        output_file = price_dir / FilePatterns.PRICE_EXTRACTION_BATCH.format(keyword=keyword, timestamp=timestamp)
-                    
-                    # 添加详细的保存日志
-                    log_callback(f"📁 输出目录: {output_directory}")
-                    log_callback(f"📄 目标文件路径: {output_file}")
-                    log_callback(f"📊 提取结果数量: {len(results)}")
-                    
-                    # 使用全局路径配置确保所有必要目录存在
-                    BiddingPaths.ensure_directories(output_directory)
-                    log_callback(f"✅ 确保目录结构存在: {BiddingPaths.get_data_dir(output_directory)}")
-                    
-                    if extractor.save_results(results, str(output_file)):
-                        log_callback(f"🎉 {mode_name}提取完成！结果已保存到: {output_file}")
-                        log_callback(f"📏 文件大小: {output_file.stat().st_size / 1024:.1f}KB")
-                        st.session_state.extraction_results = results
-                        st.session_state.extraction_output_file = str(output_file)
+                    # 如果是测试模式，预先筛选单个文件
+                    if self.test_mode:
+                        log_callback("🔍 测试模式：查找最新匹配文件...")
+                        # 注意：这里需要获取到外层类的方法
+                        latest_file = self._find_latest_test_file_standalone(self.html_dir, self.keyword)
                         
-                        # 测试模式额外保存测试结果
-                        if test_mode and results:
-                            st.session_state.test_results = results[0] if results else None
-                    else:
-                        log_callback("❌ 保存结果文件失败")
-                        log_callback(f"🔍 检查目录权限: {output_file.parent}")
-                else:
-                    log_callback("⚠️ 未找到匹配的价格信息")
-                    log_callback(f"🔍 检查HTML目录: {html_dir}")
+                        if not latest_file:
+                            log_callback("❌ 未找到匹配的公示公告文件")
+                            self.status = 'failed'
+                            self.error_message = "未找到匹配的公示公告文件"
+                            return
+                        
+                        self.test_file_path = str(latest_file)
+                        log_callback(f"📄 选择测试文件: {latest_file.name}")
+                        
+                        # 显示文件信息
+                        file_stat = latest_file.stat()
+                        file_size = file_stat.st_size / 1024  # KB
+                        file_time = datetime.fromtimestamp(file_stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                        log_callback(f"📅 文件时间: {file_time}")
+                        log_callback(f"📏 文件大小: {file_size:.1f}KB")
+                        
+                        # 手动设置扫描结果为单个文件
+                        extractor._manual_file_list = [latest_file]
                     
-                    # 显示HTML目录中的文件
-                    if html_dir.exists():
-                        html_files = list(html_dir.rglob("*.html"))
-                        log_callback(f"📊 HTML目录文件数: {len(html_files)}")
-                        if html_files:
-                            log_callback("📋 HTML文件列表 (前5个):")
-                            for i, f in enumerate(html_files[:5]):
-                                log_callback(f"  {i+1}. {f.name}")
+                    # 执行批量提取（测试模式会处理单个文件）
+                    results = extractor.extract_info_batch(
+                        keyword=self.keyword,
+                        extract_type="price",
+                        progress_callback=progress_callback,
+                        log_callback=log_callback
+                    )
+                    
+                    # 保存结果
+                    if results:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        # 使用全局路径配置
+                        price_dir = BiddingPaths.get_price_dir(self.output_directory)
+                        
+                        if self.test_mode:
+                            output_file = price_dir / FilePatterns.PRICE_EXTRACTION_TEST.format(keyword=self.keyword, timestamp=timestamp)
+                        else:
+                            output_file = price_dir / FilePatterns.PRICE_EXTRACTION_BATCH.format(keyword=self.keyword, timestamp=timestamp)
+                        
+                        # 添加详细的保存日志
+                        log_callback(f"📁 输出目录: {self.output_directory}")
+                        log_callback(f"📄 目标文件路径: {output_file}")
+                        log_callback(f"📊 提取结果数量: {len(results)}")
+                        
+                        # 使用全局路径配置确保所有必要目录存在
+                        BiddingPaths.ensure_directories(self.output_directory)
+                        log_callback(f"✅ 确保目录结构存在: {BiddingPaths.get_data_dir(self.output_directory)}")
+                        
+                        if extractor.save_results(results, str(output_file)):
+                            mode_name = "测试" if self.test_mode else "批量"
+                            log_callback(f"🎉 {mode_name}提取完成！结果已保存到: {output_file}")
+                            log_callback(f"📏 文件大小: {output_file.stat().st_size / 1024:.1f}KB")
+                            
+                            # 保存结果到线程属性（不访问session_state）
+                            self.results = results
+                            self.output_file = str(output_file)
+                            self.status = 'completed'
+                            
+                            # 测试模式额外保存测试结果
+                            if self.test_mode and results:
+                                self.test_results = results[0] if results else None
+                        else:
+                            log_callback("❌ 保存结果文件失败")
+                            log_callback(f"🔍 检查目录权限: {output_file.parent}")
+                            self.status = 'failed'
+                            self.error_message = "保存结果文件失败"
                     else:
-                        log_callback(f"❌ HTML目录不存在: {html_dir}")
-                
-                # 标记完成
-                st.session_state.extraction_completed = True
-                
-                # 测试模式显示详细结果
-                if test_mode and st.session_state.test_results:
-                    # 使用工作线程内部的开始时间，避免session state线程同步问题
-                    processing_time = (datetime.now() - worker_start_time).total_seconds()
-                    log_callback(f"⏱️ 处理耗时: {processing_time:.1f}秒")
-                    self._display_test_results_unified(st.session_state.test_results)
-                
-            except Exception as e:
-                error_msg = f"❌ {mode_name}提取过程发生错误: {str(e)}"
-                log_callback(error_msg)
-                logger.error(f"{mode_name}价格提取异常: {e}")
-            finally:
-                st.session_state.extraction_running = False
-                if test_mode:
-                    st.session_state.testing_in_progress = False
+                        log_callback("⚠️ 未找到匹配的价格信息")
+                        log_callback(f"🔍 检查HTML目录: {self.html_dir}")
+                        self.status = 'completed'  # 没有结果也算完成
+                        self.error_message = "未找到匹配的价格信息"
+                        
+                        # 显示HTML目录中的文件
+                        if self.html_dir.exists():
+                            html_files = list(self.html_dir.rglob("*.html"))
+                            log_callback(f"📊 HTML目录文件数: {len(html_files)}")
+                            if html_files:
+                                log_callback("📋 HTML文件列表 (前5个):")
+                                for i, f in enumerate(html_files[:5]):
+                                    log_callback(f"  {i+1}. {f.name}")
+                        else:
+                            log_callback(f"❌ HTML目录不存在: {self.html_dir}")
+                    
+                    # 计算处理时间
+                    self.processing_time = (datetime.now() - self.start_time).total_seconds()
+                    
+                    # 测试模式显示详细结果
+                    if self.test_mode and self.test_results:
+                        log_callback(f"⏱️ 处理耗时: {self.processing_time:.1f}秒")
+                        log_callback("测试结果已保存，请在UI中查看")
+                    
+                except Exception as e:
+                    mode_name = "测试" if self.test_mode else "批量"
+                    error_msg = f"❌ {mode_name}提取过程发生错误: {str(e)}"
+                    log_callback(error_msg)
+                    logger.error(f"{mode_name}价格提取异常: {e}")
+                    self.status = 'failed'
+                    self.error_message = str(e)
+                finally:
+                    # 确保状态被设置
+                    if self.status == 'running':
+                        self.status = 'completed'
+                        
+            def _find_latest_test_file_standalone(self, html_dir: Path, keyword: str) -> Optional[Path]:
+                """独立的文件查找方法 - 不依赖外层类"""
+                try:
+                    matching_files = []
+                    
+                    # 递归查找所有HTML文件
+                    for html_file in html_dir.rglob("*.html"):
+                        # 检查文件名是否以"公示公告"开头
+                        if html_file.name.startswith("公示公告"):
+                            try:
+                                # 检查文件内容是否包含关键词
+                                with open(html_file, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                    if keyword.lower() in content.lower():
+                                        matching_files.append(html_file)
+                            except Exception:
+                                continue
+                    
+                    if not matching_files:
+                        return None
+                    
+                    # 按修改时间排序，选择最新的
+                    latest_file = max(matching_files, key=lambda f: f.stat().st_mtime)
+                    return latest_file
+                    
+                except Exception:
+                    return None
         
         # 启动后台线程
-        import threading
-        thread = threading.Thread(target=extraction_worker)
-        thread.daemon = True
-        st.session_state.extraction_thread = thread
-        thread.start()
+        worker = ExtractionWorker()
+        worker.start()
+        st.session_state.extraction_thread = worker
         
-        success_msg = f"{mode_icon} {mode_name}价格提取任务已启动！请查看日志标签页了解实时进度。"
+        success_msg = f"{mode_icon} {mode_name}价格提取任务已启动！请在结果统计标签页查看进度。"
         st.success(success_msg)
     
-    @st.fragment(run_every=3)  # 调整到3秒，错开其他fragment的执行时间
     def _extraction_status_fragment(self):
-        """提取状态检查片段 - 只处理状态，避免重复显示"""
+        """提取状态检查 - 正确的线程间通信方式"""
+        extraction_thread = st.session_state.get('extraction_thread')
+        
+        if extraction_thread and isinstance(extraction_thread, threading.Thread):
+            # 检查线程是否完成
+            if not extraction_thread.is_alive() and st.session_state.get('extraction_running', False):
+                # 线程已完成，从线程属性获取结果并更新session_state
+                try:
+                    # 同步结果到session_state（在主线程中安全操作）
+                    st.session_state.extraction_running = False
+                    if hasattr(extraction_thread, 'test_mode') and extraction_thread.test_mode:
+                        st.session_state.testing_in_progress = False
+                    
+                    # 获取结果
+                    if extraction_thread.status == 'completed':
+                        st.session_state.extraction_results = extraction_thread.results
+                        st.session_state.extraction_output_file = extraction_thread.output_file
+                        
+                        if hasattr(extraction_thread, 'test_results') and extraction_thread.test_results:
+                            st.session_state.test_results = extraction_thread.test_results
+                        if hasattr(extraction_thread, 'test_file_path') and extraction_thread.test_file_path:
+                            st.session_state.test_file_path = extraction_thread.test_file_path
+                        
+                        # 标记完成以触发UI更新
+                        st.session_state.extraction_completed = True
+                        
+                    elif extraction_thread.status == 'failed':
+                        error_msg = f"❌ 提取任务失败: {extraction_thread.error_message}"
+                        st.error(error_msg)
+                    
+                    # 清理线程引用
+                    st.session_state.extraction_thread = None
+                    
+                except Exception as e:
+                    logger.error(f"同步线程结果时出错: {e}")
+                    # 确保基本状态被重置
+                    st.session_state.extraction_running = False
+                    st.session_state.testing_in_progress = False
+                    st.session_state.extraction_thread = None
+        
+        # 显示完成结果（原有逻辑）
         if st.session_state.get('extraction_completed', False):
-            # 显示完成结果
             self._show_extraction_results()
             # 重置完成状态，避免重复显示
             st.session_state.extraction_completed = False
@@ -1107,25 +988,25 @@ class CrawlerConfigPage:
                             content = f.read()
                             if keyword.lower() in content.lower():
                                 matching_files.append(html_file)
-                                ModernLogViewer.add_log_background(f"  ✅ 找到匹配文件: {html_file.name}", "DEBUG")
+                                # 删除了日志调用
                     except Exception as e:
-                        ModernLogViewer.add_log_background(f"  ❌ 读取文件失败 {html_file.name}: {e}", "WARNING")
+                        # 删除了日志调用
                         continue
             
             if not matching_files:
-                ModernLogViewer.add_log_background("⚠️ 未找到包含关键词的公示公告文件", "WARNING")
+                # 删除了日志调用
                 return None
             
-            ModernLogViewer.add_log_background(f"📊 找到 {len(matching_files)} 个匹配的公示公告文件", "INFO")
+            # 删除了日志调用
             
             # 按修改时间排序，选择最新的
             latest_file = max(matching_files, key=lambda f: f.stat().st_mtime)
             
-            ModernLogViewer.add_log_background(f"🎯 选择最新文件: {latest_file.name}", "SUCCESS")
+            # 删除了日志调用
             return latest_file
             
         except Exception as e:
-            ModernLogViewer.add_log_background(f"❌ 文件扫描失败: {e}", "ERROR")
+            # 删除了日志调用
             return None
     
 
@@ -1138,24 +1019,26 @@ class CrawlerConfigPage:
             return
         
         # 在日志中显示详细结果
-        ModernLogViewer.add_log_background("📊 === 测试结果详情 ===", "INFO")
-        ModernLogViewer.add_log_background(f"📁 文件: {test_result.get('file_name', 'unknown')}", "INFO")
-        ModernLogViewer.add_log_background(f"📝 标题: {test_result.get('title', '未知')}", "INFO")
-        ModernLogViewer.add_log_background(f"🎯 成功: {'是' if test_result.get('success', False) else '否'}", "INFO")
+        # 删除了日志调用
+        # 删除了日志调用
+        # 删除了日志调用
+        # 删除了日志调用
         
         extracted_info = test_result.get('extracted_info')
         if extracted_info:
             # 将提取结果按行分割并逐行输出到日志
             extracted_lines = str(extracted_info).split('\n')
-            ModernLogViewer.add_log_background("💰 === LLM提取结果 ===", "SUCCESS")
+            # 删除了日志调用
             for line in extracted_lines[:10]:  # 只显示前10行
                 if line.strip():
-                    ModernLogViewer.add_log_background(f"  {line.strip()}", "INFO")
+                    # 删除了日志调用
+                    pass
             
             if len(extracted_lines) > 10:
-                ModernLogViewer.add_log_background(f"  ... (还有 {len(extracted_lines) - 10} 行)", "INFO")
+                # 删除了日志调用
+                pass
         
-        ModernLogViewer.add_log_background("📊 === 测试结果结束 ===", "INFO")
+        # 删除了日志调用
     
     def _render_file_management_section(self, output_directory: str):
         """渲染文件管理区域"""
@@ -1226,10 +1109,10 @@ class CrawlerConfigPage:
             output_path = Path(output_directory)
             
             # 添加调试信息
-            ModernLogViewer.add_log_background(f"🔍 扫描价格文件目录: {output_path}", "DEBUG")
+            # 删除了日志调用
             
             if not output_path.exists():
-                ModernLogViewer.add_log_background(f"❌ 目录不存在: {output_path}", "WARNING")
+                # 删除了日志调用
                 return []
             
             files_info = []
@@ -1245,7 +1128,8 @@ class CrawlerConfigPage:
                 # 如果新目录不存在，检查旧位置并显示提示
                 old_files = list(output_path.glob(FilePatterns.PRICE_EXTRACTION_GLOB))
                 if old_files:
-                    ModernLogViewer.add_log_background(f"⚠️ 发现旧位置的价格文件，请手动迁移到: {price_dir}", "WARNING")
+                    # 删除了日志调用
+                    pass
                 all_json_files = []
                 all_price_files = []
             
@@ -1253,15 +1137,15 @@ class CrawlerConfigPage:
             batch_price_files = [f for f in all_price_files if "test" not in f.name]
             test_price_files = [f for f in all_price_files if "test" in f.name]
             
-            ModernLogViewer.add_log_background(f"📊 目录统计 - 总JSON文件: {len(all_json_files)}, 批量价格文件: {len(batch_price_files)}, 测试价格文件: {len(test_price_files)}", "DEBUG")
+            pass
             
             # 显示所有JSON文件名（调试用）
             if all_json_files:
-                ModernLogViewer.add_log_background("📁 找到的JSON文件:", "DEBUG")
+                pass
                 for f in all_json_files[:5]:  # 只显示前5个
-                    ModernLogViewer.add_log_background(f"  - {f.name}", "DEBUG")
+                    pass
                 if len(all_json_files) > 5:
-                    ModernLogViewer.add_log_background(f"  ... 还有 {len(all_json_files) - 5} 个文件", "DEBUG")
+                    pass
             
             for file_path in all_price_files:
                 try:
@@ -1323,13 +1207,13 @@ class CrawlerConfigPage:
                     unique_files[path] = file_info
                 else:
                     # 如果发现重复，记录日志
-                    ModernLogViewer.add_log_background(f"⚠️ 发现重复文件，已跳过: {file_info['name']}", "WARNING")
+                    pass
             
             # 转换为列表并按创建时间倒序排列
             files_info = list(unique_files.values())
             files_info.sort(key=lambda x: x['created_time'], reverse=True)
             
-            ModernLogViewer.add_log_background(f"✅ 扫描完成，实际文件数: {len(files_info)}", "INFO")
+            pass
             
             st.session_state.price_files_info = files_info
             st.session_state.last_scan_time = datetime.now()
@@ -1480,7 +1364,7 @@ class CrawlerConfigPage:
         try:
             Path(file_path).unlink()
             st.session_state.file_operation_result = f"✅ 文件删除成功: {Path(file_path).name}"
-            ModernLogViewer.add_log_background(f"🗑️ 删除价格文件: {Path(file_path).name}", "INFO")
+            pass
         except Exception as e:
             st.error(f"删除文件失败: {e}")
     
@@ -1624,7 +1508,7 @@ class CrawlerConfigPage:
                                     st.error(f"删除 {Path(file_path).name} 失败: {e}")
                             
                             st.success(f"✅ 成功删除 {deleted_count} 个文件")
-                            ModernLogViewer.add_log_background(f"🗑️ 批量删除 {deleted_count} 个价格文件", "INFO")
+                            pass
                             st.session_state.show_cleanup_dialog = False
                             st.rerun()
                     
@@ -1660,7 +1544,7 @@ class CrawlerConfigPage:
                             # 在ZIP中使用文件名作为路径
                             zip_file.write(file_path_obj, file_path_obj.name)
                     except Exception as e:
-                        ModernLogViewer.add_log_background(f"❌ 无法添加文件到压缩包: {file_path_obj.name} - {e}", "ERROR")
+                        pass
             
             zip_buffer.seek(0)
             
@@ -1682,7 +1566,7 @@ class CrawlerConfigPage:
             
         except Exception as e:
             st.error(f"❌ 创建压缩包失败: {e}")
-            ModernLogViewer.add_log_background(f"❌ 批量下载失败: {e}", "ERROR")
+            pass
     
     def _delete_selected_files(self):
         """删除选中的文件"""
@@ -1696,16 +1580,16 @@ class CrawlerConfigPage:
         
         st.session_state.file_operation_result = f"✅ 成功删除 {deleted_count} 个文件"
         st.session_state.selected_files = []
-        ModernLogViewer.add_log_background(f"🗑️ 批量删除 {deleted_count} 个价格文件", "INFO")
+        pass
     
     def _debug_file_paths(self, output_directory: str):
         """调试文件路径和生成问题"""
-        ModernLogViewer.add_log_background("🔍 === 开始调试检查 ===", "INFO")
+        pass
         
         # 1. 检查输出目录
         output_path = Path(output_directory)
-        ModernLogViewer.add_log_background(f"📁 配置的输出目录: {output_path}", "INFO")
-        ModernLogViewer.add_log_background(f"📂 目录是否存在: {'是' if output_path.exists() else '否'}", "INFO")
+        pass
+        pass
         
         if output_path.exists():
             # 检查目录权限
@@ -1713,98 +1597,98 @@ class CrawlerConfigPage:
                 test_file = output_path / "test_write_permission.tmp"
                 test_file.write_text("test")
                 test_file.unlink()
-                ModernLogViewer.add_log_background("✅ 目录写入权限: 正常", "INFO")
+                pass
             except Exception as e:
-                ModernLogViewer.add_log_background(f"❌ 目录写入权限: 异常 - {e}", "ERROR")
+                pass
             
             # 列出所有文件
             all_files = list(output_path.rglob("*"))
-            ModernLogViewer.add_log_background(f"📊 目录总文件数: {len(all_files)}", "INFO")
+            pass
             
             # JSON文件
             json_files = [f for f in all_files if f.suffix == '.json']
-            ModernLogViewer.add_log_background(f"📄 JSON文件数: {len(json_files)}", "INFO")
+            pass
             
             if json_files:
-                ModernLogViewer.add_log_background("📋 JSON文件列表:", "INFO")
+                pass
                 for f in json_files[:10]:  # 显示前10个
-                    ModernLogViewer.add_log_background(f"  - {f.name} ({f.stat().st_size / 1024:.1f}KB)", "INFO")
+                    pass
             
             # 价格文件 - 使用全局路径配置检查
             price_dir = BiddingPaths.get_price_dir(str(output_path))
-            ModernLogViewer.add_log_background(f"📁 价格文件目录: {price_dir}", "INFO")
-            ModernLogViewer.add_log_background(f"📂 价格目录是否存在: {'是' if price_dir.exists() else '否'}", "INFO")
+            pass
+            pass
             
             if price_dir.exists():
                 price_files = list(price_dir.glob(FilePatterns.PRICE_EXTRACTION_GLOB))
-                ModernLogViewer.add_log_background(f"💰 价格文件数 (新位置): {len(price_files)}", "INFO")
+                pass
                 
                 if price_files:
-                    ModernLogViewer.add_log_background("📋 价格文件列表:", "INFO")
+                    pass
                     for f in price_files:
                         stat = f.stat()
                         size_kb = stat.st_size / 1024
                         mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                        ModernLogViewer.add_log_background(f"  - {f.name} ({size_kb:.1f}KB, {mtime})", "INFO")
+                        pass
             else:
                 # 检查旧位置的价格文件
                 old_price_files = list(output_path.glob(FilePatterns.PRICE_EXTRACTION_GLOB))
-                ModernLogViewer.add_log_background(f"💰 旧位置价格文件数: {len(old_price_files)}", "INFO")
+                pass
                 
                 if old_price_files:
-                    ModernLogViewer.add_log_background("⚠️ 发现旧位置的价格文件，建议迁移到新目录:", "WARNING")
+                    pass
                     for f in old_price_files:
                         stat = f.stat()
                         size_kb = stat.st_size / 1024
                         mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                        ModernLogViewer.add_log_background(f"  - {f.name} ({size_kb:.1f}KB, {mtime})", "INFO")
+                        pass
         
         # 2. 检查HTML目录
         html_dir = BiddingPaths.get_raw_html_dir(str(output_path))
-        ModernLogViewer.add_log_background(f"📁 HTML目录: {html_dir}", "INFO")
-        ModernLogViewer.add_log_background(f"📂 HTML目录是否存在: {'是' if html_dir.exists() else '否'}", "INFO")
+        pass
+        pass
         
         if html_dir.exists():
             html_files = list(html_dir.rglob("*.html"))
-            ModernLogViewer.add_log_background(f"📄 HTML文件数: {len(html_files)}", "INFO")
+            pass
             
             # 公示公告文件
             announcement_files = list(html_dir.glob(FilePatterns.HTML_ANNOUNCEMENT))
-            ModernLogViewer.add_log_background(f"📋 公示公告文件数: {len(announcement_files)}", "INFO")
+            pass
             
             if announcement_files:
-                ModernLogViewer.add_log_background("📋 公示公告文件列表 (前5个):", "INFO")
+                pass
                 for f in announcement_files[:5]:
                     stat = f.stat()
                     size_kb = stat.st_size / 1024
                     mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    ModernLogViewer.add_log_background(f"  - {f.name} ({size_kb:.1f}KB, {mtime})", "INFO")
+                    pass
         
         # 3. 检查最近的提取操作
         if hasattr(st.session_state, 'extraction_output_file') and st.session_state.extraction_output_file:
             last_output_file = st.session_state.extraction_output_file
-            ModernLogViewer.add_log_background(f"📄 最近的输出文件: {last_output_file}", "INFO")
+            pass
             
             if Path(last_output_file).exists():
                 file_size = Path(last_output_file).stat().st_size / 1024
-                ModernLogViewer.add_log_background(f"✅ 文件存在，大小: {file_size:.1f}KB", "INFO")
+                pass
             else:
-                ModernLogViewer.add_log_background("❌ 文件不存在", "ERROR")
+                pass
         else:
-            ModernLogViewer.add_log_background("ℹ️ 尚未进行过价格提取操作", "INFO")
+            pass
         
         # 4. 检查当前工作目录
         import os
         cwd = os.getcwd()
-        ModernLogViewer.add_log_background(f"🗂️ 当前工作目录: {cwd}", "INFO")
+        pass
         
         # 5. 检查相对路径和绝对路径
         if not output_path.is_absolute():
             absolute_path = Path(cwd) / output_path
-            ModernLogViewer.add_log_background(f"📍 绝对路径: {absolute_path}", "INFO")
-            ModernLogViewer.add_log_background(f"📂 绝对路径是否存在: {'是' if absolute_path.exists() else '否'}", "INFO")
+            pass
+            pass
         
-        ModernLogViewer.add_log_background("🔍 === 调试检查完成 ===", "INFO")
+        pass
         
         # 显示结果提示
         st.session_state.file_operation_result = "🔍 已完成调试检查，请查看日志了解详情"

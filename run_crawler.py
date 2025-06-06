@@ -14,10 +14,23 @@
 import os
 import sys
 import subprocess
+import logging
 from pathlib import Path
 
 def main():
     """主函数"""
+    
+    # 抑制 Streamlit 的所有警告日志
+    logging.getLogger("streamlit").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.state").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.fragment").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.scriptrunner.script_runner").setLevel(logging.ERROR)
+    
+    # 抑制线程上下文警告
+    import warnings
+    warnings.filterwarnings("ignore", message=".*missing ScriptRunContext.*")
     
     # 获取项目根目录
     project_root = Path(__file__).parent

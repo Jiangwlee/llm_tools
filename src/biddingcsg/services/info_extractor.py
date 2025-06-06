@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from biddingcsg.llm.chat import LLMHelper
 from biddingcsg.utils.logger import get_logger
+from biddingcsg.config.paths import BiddingPaths
 
 logger = get_logger(__name__)
 
@@ -136,31 +137,65 @@ class InfoExtractor:
         扫描匹配的HTML文件
         
         Args:
-            keyword: 搜索关键词
+            keyword: 搜索关键词（公司名称）
             
         Returns:
             匹配的文件路径列表
         """
         matching_files = []
         
-        if not self.html_directory.exists():
-            logger.warning(f"HTML目录不存在: {self.html_directory}")
+        # self.html_directory 指向 raw_html 目录
+        # self.html_directory.parent 指向 bidding_data 目录
+        # 因此需要再往上一级到达 output 目录作为 base_path
+        base_path = self.html_directory.parent.parent  # 从 raw_html -> bidding_data -> output
+        
+        metadata_dir = BiddingPaths.get_metadata_dir(str(base_path))
+        raw_html_dir = BiddingPaths.get_raw_html_dir(str(base_path))
+        
+        logger.debug(f"基础路径: {base_path}")
+        logger.debug(f"Metadata目录: {metadata_dir}")
+        logger.debug(f"Raw HTML目录: {raw_html_dir}")
+        
+        if not metadata_dir.exists():
+            logger.warning(f"Metadata目录不存在: {metadata_dir}")
             return matching_files
         
-        # 递归查找所有HTML文件
-        for html_file in self.html_directory.rglob("*.html"):
-            # 检查文件名是否以"公示公告"开头
-            if html_file.name.startswith("公示公告"):
-                # 检查文件内容是否包含关键词
-                try:
-                    with open(html_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        if keyword.lower() in content.lower():
-                            matching_files.append(html_file)
-                            logger.debug(f"找到匹配文件: {html_file}")
-                except Exception as e:
-                    logger.error(f"读取文件失败 {html_file}: {e}")
+        if not raw_html_dir.exists():
+            logger.warning(f"Raw HTML目录不存在: {raw_html_dir}")
+            return matching_files
         
+        # 第一步：过滤以"公示公告"开头的metadata文件
+        metadata_files = list(metadata_dir.glob("公示公告_*.json"))
+        logger.info(f"找到 {len(metadata_files)} 个公示公告metadata文件")
+        
+        # 第二步：读取metadata文件，过滤company字段匹配的文件
+        matched_filenames = []
+        for metadata_file in metadata_files:
+            try:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                    
+                # 检查company字段是否包含关键词
+                company = metadata.get('company', '')
+                if keyword.lower() in company.lower():
+                    filename = metadata.get('filename', '')
+                    if filename:
+                        matched_filenames.append(filename)
+                        logger.debug(f"匹配的公司: {company}, 文件: {filename}")
+                
+            except Exception as e:
+                logger.error(f"读取metadata文件失败 {metadata_file}: {e}")
+        
+        logger.info(f"根据关键词 '{keyword}' 找到 {len(matched_filenames)} 个匹配的文件")
+        
+        # 第三步：在raw_html目录下找到对应的HTML文件
+        for filename in matched_filenames:
+            # 在raw_html目录及其子目录中查找文件
+            for html_file in raw_html_dir.rglob(filename):
+                matching_files.append(html_file)
+                logger.debug(f"找到HTML文件: {html_file}")
+        
+        logger.info(f"最终找到 {len(matching_files)} 个可处理的HTML文件")
         return matching_files
     
     def _process_file_loop(self, 
@@ -200,14 +235,17 @@ class InfoExtractor:
             try:
                 # 处理单个文件
                 result = self._process_single_file(file_path, extract_type)
-                results.append(result)
-                
-                if result.get('success', False):
-                    if log_callback:
-                        log_callback(f"✅ 成功提取: {file_path.name}")
+                if result.get('has_target_info', False):
+                    results.append(result)
+                    if result.get('success', False):
+                        if log_callback:
+                            log_callback(f"✅ 成功提取: {file_path.name}")
+                    else:
+                        if log_callback:
+                            log_callback(f"⚠️ 未找到价格信息: {file_path.name}")
                 else:
                     if log_callback:
-                        log_callback(f"⚠️ 未找到相关信息: {file_path.name}")
+                        log_callback(f"⚠️ 未找到价格信息: {file_path.name}")
                 
             except Exception as e:
                 logger.error(f"处理文件失败 {file_path}: {e}")

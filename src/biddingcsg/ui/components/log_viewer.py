@@ -172,49 +172,7 @@ class ModernLogViewer:
                 message = parts[1]
         self._add_log_to_session(message, level)
 
-    @st.fragment(run_every=1)  # 每秒检查一次
-    def _log_refresh_fragment(self):
-        """基于文档方案的实时日志更新机制"""
-        try:
-            self._init_session_state()
-            
-            if not st.session_state.get('log_auto_refresh', True):
-                return
-            
-            current_time = datetime.now().strftime("%H:%M:%S")
-            
-            # 处理队列中的新日志
-            new_logs_from_queue = self._get_new_logs_from_queue()
-            
-            # 检查文件更新
-            file_logs_count = self._check_log_file()
-            
-            # 如果有新日志，添加并强制刷新UI
-            total_new_logs = len(new_logs_from_queue) + file_logs_count
-            
-            if total_new_logs > 0:
-                st.session_state.log_last_update = datetime.now()
-                
-                # 显示更新状态
-                st.success(f"🔄 **{current_time}** - 新增 {total_new_logs} 条日志")
-                
-                # 控制刷新频率（避免过于频繁）
-                last_rerun = st.session_state.get('last_rerun_time', 0)
-                current_timestamp = time.time()
-                
-                if current_timestamp - last_rerun > 1:  # 最少间隔1秒
-                    st.session_state.last_rerun_time = current_timestamp
-                    st.rerun()  # 强制刷新UI
-            else:
-                # 显示静态状态
-                queue_size = global_log_queue.qsize()
-                if queue_size > 0:
-                    st.info(f"🔄 **{current_time}** - 队列中有 {queue_size} 条日志待处理")
-                else:
-                    st.markdown(f"🔄 **自动刷新中** - {current_time}")
-                
-        except Exception as e:
-            st.error(f"日志刷新异常: {e}")
+    # 实时刷新功能已删除
     
     def _get_new_logs_from_queue(self):
         """从队列获取新日志 - 按文档方案实现"""
@@ -241,23 +199,16 @@ class ModernLogViewer:
     def render_modern(self, height: int = 400, show_controls: bool = True, disable_auto_refresh: bool = False):
         self._init_session_state()
         if show_controls:
-            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            col1, col2, col3 = st.columns([3, 1, 1])
             with col1:
-                st.markdown("**📝 实时日志**")
+                st.markdown("**📝 日志显示**")
             with col2:
-                auto_refresh = st.checkbox(
-                    "自动刷新", 
-                    value=st.session_state.get('log_auto_refresh', True),
-                    key="log_auto_refresh_checkbox"
-                )
-                st.session_state.log_auto_refresh = auto_refresh
-            with col3:
                 if st.button("🔄 刷新", key="manual_refresh_btn"):
-                    # 手动强制刷新
+                    # 手动刷新
                     self._get_new_logs_from_queue()
                     self._check_log_file()
                     st.rerun()
-            with col4:
+            with col3:
                 if st.button("🗑️ 清空", key="clear_logs_btn"):
                     self.clear_logs()
         log_count = len(st.session_state.log_entries)
@@ -270,8 +221,7 @@ class ModernLogViewer:
         with col_stat3:
             update_ago = (datetime.now() - last_update).total_seconds()
             st.metric("上次更新", f"{update_ago:.0f}秒前")
-        if st.session_state.get('log_auto_refresh', True) and not disable_auto_refresh:
-            self._log_refresh_fragment()
+        # 自动刷新功能已删除
         # 手动处理已在 fragment 中完成，这里注释掉避免重复处理
         # manual_queue_count = self._process_global_log_queue()
         # manual_file_count = self._check_log_file()
@@ -309,28 +259,11 @@ class ModernLogViewer:
                 height=height,
                 disabled=True,
                 key="modern_log_display",
-                help="实时显示的日志内容（最新日志在上方），支持自动刷新",
+                help="日志内容（最新日志在上方），点击刷新按钮更新",
                 label_visibility="collapsed"
             )
-            if st.session_state.get('log_auto_refresh', True):
-                st.markdown("""
-                <script>
-                setTimeout(function() {
-                    const textAreas = window.parent.document.querySelectorAll('textarea[aria-label=\"日志内容\"]');
-                    textAreas.forEach(function(textarea) {
-                        if (textarea) {
-                            textarea.scrollTop = 0;
-                        }
-                    });
-                }, 100);
-                </script>
-                """, unsafe_allow_html=True)
         else:
-            st.info("📝 等待日志输出...")
-            if st.session_state.get('log_auto_refresh', True):
-                st.markdown("🔄 **自动刷新已启用** - 每1秒检查新日志")
-            else:
-                st.markdown("⏸️ **自动刷新已暂停** - 点击刷新按钮手动更新")
+            st.info("📝 等待日志输出...点击刷新按钮查看最新日志")
 
     def render_compact(self, max_display: int = 5):
         self._init_session_state()
@@ -441,7 +374,7 @@ def get_global_log_viewer() -> ModernLogViewer:
     return _global_log_viewer
 
 def add_log(message: str, level: str = "INFO"):
-    ModernLogViewer.add_log_background(message, level)
+    pass
 
 LogViewer = ModernLogViewer
 
