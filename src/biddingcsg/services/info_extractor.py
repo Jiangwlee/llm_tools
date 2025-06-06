@@ -30,6 +30,7 @@ class InfoExtractor:
         self.html_directory = Path(html_directory)
         self.results = []
         self.stop_requested = False
+        self._manual_file_list = None  # 手动指定的文件列表（用于测试模式）
         
     def extract_info_batch(self, 
                           keyword: str, 
@@ -56,10 +57,15 @@ class InfoExtractor:
             if log_callback:
                 log_callback("🔍 开始扫描HTML文件...")
             
-            files = self._scan_files(keyword)
-            
-            if log_callback:
-                log_callback(f"📁 找到 {len(files)} 个匹配的公示公告文件")
+            # 如果有手动指定的文件列表，使用它们
+            if self._manual_file_list:
+                files = self._manual_file_list
+                if log_callback:
+                    log_callback(f"📁 使用手动指定的文件列表: {len(files)} 个文件")
+            else:
+                files = self._scan_files(keyword)
+                if log_callback:
+                    log_callback(f"📁 扫描找到 {len(files)} 个匹配的公示公告文件")
             
             if not files:
                 if log_callback:

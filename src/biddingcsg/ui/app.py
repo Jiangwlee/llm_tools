@@ -94,9 +94,9 @@ def main():
         - AI模型集成分析功能
         
         📁 **文件结构:**
-        - `raw_html/` - 原始HTML文件
-        - `metadata/` - 元数据JSON文件
-        - `logs/` - 爬取日志文件
+        - `bidding_data/raw_html/` - 原始HTML文件
+        - `bidding_data/metadata/` - 元数据JSON文件
+        - `bidding_data/logs/` - 爬取日志文件
         """)
         
         # 帮助信息
@@ -116,7 +116,7 @@ def main():
                - 选择公告类型
             
             3. **设置输出目录**
-               - 默认保存到 `output/bidding_data`
+               - 默认保存到 `output/`，数据存储在 `bidding_data/` 子目录
                - 可自定义输出路径
             
             4. **启动爬取**

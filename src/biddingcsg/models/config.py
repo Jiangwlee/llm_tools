@@ -3,6 +3,13 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import Optional, List
 import os
+import sys
+
+# 添加项目根目录到路径
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from biddingcsg.config.paths import BiddingPaths
 
 @dataclass
 class CrawlerConfig:
@@ -15,7 +22,7 @@ class CrawlerConfig:
     earliest_date: Optional[str] = None  # YYYY-MM-DD格式，None表示不限制
     
     # 输出配置
-    output_directory: str = "./output/bidding_data"
+    output_directory: str = "./output"
     
     # 高级参数
     request_delay: float = 2.0  # 请求间隔（秒）
@@ -55,17 +62,17 @@ class CrawlerConfig:
     @property
     def html_output_dir(self) -> Path:
         """HTML文件输出目录"""
-        return Path(self.output_directory) / "raw_html"
+        return BiddingPaths.get_raw_html_dir(self.output_directory)
     
     @property
     def metadata_output_dir(self) -> Path:
         """元数据输出目录"""
-        return Path(self.output_directory) / "metadata"
+        return BiddingPaths.get_metadata_dir(self.output_directory)
     
     @property
     def logs_output_dir(self) -> Path:
         """日志输出目录"""
-        return Path(self.output_directory) / "logs"
+        return BiddingPaths.get_logs_dir(self.output_directory)
     
     def to_dict(self) -> dict:
         """转换为字典"""

@@ -40,7 +40,7 @@ def get_version_info():
     return version_info
 
 # 包级别的便捷函数
-def create_default_config(search_keyword: str, output_dir: str = "./output/bidding_data") -> CrawlerConfig:
+def create_default_config(search_keyword: str, output_dir: str = "./output") -> CrawlerConfig:
     """
     创建默认配置
     

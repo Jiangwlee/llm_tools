@@ -147,7 +147,9 @@ def simulate_real_extraction():
     # 创建临时输出目录
     with tempfile.TemporaryDirectory() as temp_dir:
         output_dir = Path(temp_dir)
-        html_dir = output_dir / "raw_html"
+        # 使用全局路径配置
+        from src.biddingcsg.config.paths import BiddingPaths
+        html_dir = BiddingPaths.get_raw_html_dir(str(output_dir))
         html_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"📁 输出目录: {output_dir}")
