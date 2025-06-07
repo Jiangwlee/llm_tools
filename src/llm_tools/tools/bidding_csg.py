@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 from llm_tools.connector import getConnection
 from llm_tools.logger import get_logger
 from llm_tools.utils.number_util import is_number
-from llm_tools.tools.deepseek import deepseek_chat
+from llm_tools.tools.deepseek import doubao_chat
 from llm_tools.tools.coze import coze_chat
 from llm_tools.tools.prompts import SYS_BIDDING_SUMMARY_PROMPT, SYS_PRICE_EXTRACTION_PROMPT
 
@@ -23,7 +23,7 @@ class LLMHelper:
         """调用大模型总结内容.
         """
         try:
-            return deepseek_chat(str(user_prompt), SYS_BIDDING_SUMMARY_PROMPT, temperature=0.1)
+            return doubao_chat(str(user_prompt), SYS_BIDDING_SUMMARY_PROMPT, temperature=0.1)
         except Exception as ex:
             logger.warning(f"llm_summary 调用大模型出错, 错误信息: {ex}")
 
@@ -326,7 +326,7 @@ class BiddingCSG:
 
         self.random_wait()
 
-    def filter(self, keyword, bidding_type=None):
+    def filter(self, keyword, bidding_type=None, max_items: int = None):
         """
         过滤出包含特定关键字的公告。
 
@@ -335,13 +335,23 @@ class BiddingCSG:
         参数：
             keyword (str): 过滤关键字。
             bidding_type (int, 可选): 公告类型，1=投标报价，2=投标费率。默认为 None。
+            max_items (int, 可选): 最大处理公告数量，默认为 None 表示处理所有公告。
 
         返回值：
             None
         """
         bidding_list = self.lookup(keyword)
         update_list = []
-        for item in bidding_list:
+        total_items = len(bidding_list)
+        max_items = min(total_items, max_items) if max_items is not None else total_items
+        logger.info(f"开始处理公告列表，共 {total_items} 条记录，最大处理数量: {max_items}")
+        
+        for i, item in enumerate(bidding_list):
+            if i >= max_items:
+                logger.info(f"已达到最大处理数量 {max_items}，停止处理")
+                break
+                
+            logger.info(f"正在处理第 {i+1}/{max_items} 条公告: {item['url']}")
             try:
                 self.page.goto(item['url'], wait_until='load')
                 soup = BeautifulSoup(self.page.content(), 'html.parser')
@@ -374,6 +384,7 @@ class BiddingCSG:
                 logger.error(f"访问链接时发生错误: {item['url']}")
 
             self.random_wait()
+        logger.info(f"更新数据库，共 {len(update_list)} 条记录, {update_list}")
         self.update(update_list)
 
     def save_to_db(self):
@@ -506,7 +517,7 @@ class BiddingCSG:
             connection.commit()
 
         except Exception as e:
-            logger.info(f"数据库错误: {e}")
+            logger.info(f"数据库 Update 错误: {e}")
 
         finally:
             # 关闭连接
@@ -568,6 +579,7 @@ class BiddingCSG:
             
             # 过滤出对应的招标公告，并调用大模型来提取招标金额等信息
             for item in results_with_summary:
+                logger.info(f"正在处理第 {len(update_list) + 1}/{len(results_with_summary)} 条记录")
                 project_key = item['project'][:30]
                 query = """
                 SELECT * FROM llm_tools.bidding_csg
@@ -691,7 +703,7 @@ class BiddingCsgAnalyzer:
                 connection.close()
                 logger.info("数据库连接已关闭")
 
-def get_price_info(keyword: str, bidding_type=None, max_pages: int = 10):
+def get_price_info(keyword: str, bidding_type=None, max_pages: int = 10, skip_search: bool = False, max_filter_items: int = None):
     """
     下载招投标成交信息.
     
@@ -699,11 +711,14 @@ def get_price_info(keyword: str, bidding_type=None, max_pages: int = 10):
         - keyword: 甲方公司名称
         - bidding_type: 公告类型，1=投标报价，2=投标费率
         - max_pages: 最大爬取页数，默认为10页
+        - skip_search: 是否跳过搜索步骤，默认为False
+        - max_filter_items: filter处理的最大数量，默认为None表示处理所有
     """
     csg = BiddingCSG(verbose=True)
-    csg.search(keyword, max_page=max_pages)
-    csg.save_to_db()
-    csg.filter(keyword, bidding_type)
+    if not skip_search:
+        csg.search(keyword, max_page=max_pages)
+        csg.save_to_db()
+    csg.filter(keyword, bidding_type, max_items=max_filter_items)
     if bidding_type == 1:
         csg.analyze(keyword)
 
@@ -718,7 +733,7 @@ def query_price(keyword: str, bidding_type: int):
         - 无. 查询结果保存于 bidding_csg.csv
     """
     analyzer = BiddingCsgAnalyzer()
-    analyzer.output_as_csv(keyword, bidding_type)
+    print(analyzer.output_as_csv(keyword, bidding_type))
 
 import argparse
 
@@ -728,6 +743,12 @@ python bidding_csg.py -d -n "汕头供电局" -t 1
 
 # 下载历史中标成交价格（指定爬取5页）
 python bidding_csg.py -d -n "汕头供电局" -t 1 -m 5
+
+# 跳过搜索步骤，仅处理本地数据
+python bidding_csg.py -d -n "汕头供电局" -t 1 --skip-search
+
+# 只处理前20条公告
+python bidding_csg.py -d -n "汕头供电局" -t 1 --max-filter-items 20
 
 # 导出到 csv 文件
 python bidding_csg.py -q -n "汕头供电局" -t 1
@@ -741,6 +762,8 @@ if __name__ == '__main__':
     parser.add_argument("-n", type=str, help="要查询的甲方单位名称", required=True)
     parser.add_argument("-t", type=int, choices=[1, 2], help="公告类型: 1=投标报价, 2=投标费率")
     parser.add_argument("-m", "--max-pages", type=int, default=10, help="设置最大爬取页数，默认为10页")
+    parser.add_argument("--skip-search", action="store_true", help="跳过搜索步骤，仅处理本地数据")
+    parser.add_argument("--max-filter-items", type=int, default=None, help="filter处理的最大公告数量，默认为全部")
 
     args = parser.parse_args()
 
@@ -754,8 +777,8 @@ if __name__ == '__main__':
     logger.info(f"查询关键字: {keyword}")
 
     if args.d:
-        logger.info(f"执行 get_price_info，最大爬取页数: {args.max_pages}")
-        get_price_info(keyword, args.t, max_pages=args.max_pages)
+        logger.info(f"执行 get_price_info，最大爬取页数: {args.max_pages}，skip_search: {args.skip_search}，max_filter_items: {args.max_filter_items}")
+        get_price_info(keyword, args.t, max_pages=args.max_pages, skip_search=args.skip_search, max_filter_items=args.max_filter_items)
     if args.q:
         logger.info("执行 query_price")
         query_price(keyword, args.t)

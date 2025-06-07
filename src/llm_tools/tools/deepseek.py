@@ -31,7 +31,10 @@ def check_providers():
         except Exception as ex:
             logger.error(f"❌大模型供应商 {key} 不可用，错误原因：{ex}")
 
-check_providers()
+# check_providers()
+config.BASE_URL = config.PROVIDERS[config.DOUBAO]["BASE_URL"]
+config.API_KEY = config.PROVIDERS[config.DOUBAO]["API_KEY"]
+config.MODEL = config.PROVIDERS[config.DOUBAO]["MODEL"]
 
 def deepseek_chat(user_prompt: str, 
                   system_prompt="You are a helpful assistant.", 
@@ -69,6 +72,47 @@ def deepseek_chat(user_prompt: str,
         finally:
             return None
 
+def doubao_chat(user_prompt: str, 
+                system_prompt="You are a helpful assistant.", 
+                api_key=config.API_KEY, 
+                base_url=config.BASE_URL,
+                model=config.MODEL,
+                temperature=0.3,
+                timeout=30):
+    """调用豆包大模型完成任务.
+    """
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    # logger.info(f"调用豆包大模型，参数如下：")
+    # logger.info(f"user_prompt: {user_prompt}")
+    # logger.info(f"system_prompt: {system_prompt}")
+    # logger.info(f"api_key: {api_key[:8]}...")
+    # logger.info(f"base_url: {base_url}")
+    # logger.info(f"model: {model}")
+    # logger.info(f"temperature: {temperature}")
+    # logger.info(f"timeout: {timeout}")
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            stream=False,
+            timeout=timeout
+        )
+
+        if not response.choices:
+            logger.error(f"❌大模型 {config.MODEL} 返回空的响应：{response}")
+            return ""
+        resp = response.choices[0].message.content
+        logger.info(f"🤖大模型应答: {resp}")
+        return resp
+    except Exception as ex:
+        logger.error(f"❌大模型 {config.MODEL} 调用异常：{ex}")
+
+
 if __name__ == '__main__':
     # 测试
-    print(deepseek_chat("介绍下你自己"))
+    print(doubao_chat("介绍下你自己"))
