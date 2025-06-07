@@ -3,13 +3,13 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from llm_tools_v1.core.config import get_settings
 
-def setup_logging():
+def setup_logging(logging_level: str = "WARNING"):
     """
     初始化日志配置，支持文件轮转和控制台输出，参数从 config 读取。
     """
     settings = get_settings()
     log_dir = settings.log_dir
-    log_level = settings.log_level.upper()
+    log_level = logging_level.upper() if logging_level else settings.log_level.upper()
     log_file = Path(log_dir) / "app.log"
     Path(log_dir).mkdir(parents=True, exist_ok=True)
 
@@ -30,7 +30,7 @@ def setup_logging():
     console_handler.setFormatter(logging.Formatter(fmt, datefmt))
 
     logger = logging.getLogger()
-    logger.setLevel(getattr(logging, log_level, logging.INFO))
+    logger.setLevel(getattr(logging, log_level, logging.WARNING))
     logger.handlers.clear()
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
@@ -38,8 +38,13 @@ def setup_logging():
 
 def get_logger(name: str = None) -> logging.Logger:
     """
-    获取指定名称的日志器
+    获取指定名称的日志器。如果日志系统未初始化，则自动调用 setup_logging（兜底保障）。
+    推荐在主入口显式调用 setup_logging()，此自动初始化仅做基础配置。
     :param name: 日志器名称
     :return: logger
     """
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        # 兜底初始化，防止日志丢失
+        setup_logging()
     return logging.getLogger(name) 

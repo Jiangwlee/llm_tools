@@ -118,7 +118,49 @@ class BiddingCsgCrawler:
         except Exception as e:
             logger.error(f"读取内容失败: {e}")
 
+    def read_bidding_page(self, url):
+        """
+        阅读标讯。
+
+        该方法用于读取单个招标公告的详细信息。
+
+        参数：
+            url (str): 招标公告的URL。
+
+        返回值：
+            dict: 包含招标公告的标题、日期和正文内容的字典。
+                  字典的结构如下：
+                  {
+                      "title": str,    # 招标公告的标题
+                      "date": str,     # 招标公告的日期
+                      "content": str   # 招标公告的正文内容
+                  }
+        """
+        try:
+            logger.info(f"开始访问链接: {url}")
+            self.playwright.start()
+            self.playwright.goto(url, wait_until='load')
+            self.playwright.page.locator('div.s-content').wait_for(state='visible')
+            soup = BeautifulSoup(self.playwright.page.content(), 'html.parser')
+
+            title_tag = soup.find('h1', class_='s-title')
+            date_tag = soup.find('div', class_='s-date')
+            content_div = soup.find('div', class_='Content')
+            return {
+                "title": title_tag.text,
+                "date": date_tag.text,
+                "content": content_div.text
+            }
+        except Exception as e:
+            logger.error(f"访问链接时发生错误: {url}。 错误信息: {e}")
+            return None
+        finally:
+            self.playwright.close()
+
 if __name__ == "__main__":
     crawler = BiddingCsgCrawler()
-    result = crawler.search("广州供电局", max_page=3)
-    print(result)
+    # result = crawler.search("广州供电局", max_page=3)
+    # for item in result:
+    #     print(item)
+
+    print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml"))

@@ -7,7 +7,7 @@ class LLMClient:
     """
     统一大模型调用客户端，底层基于 liteLLM
     """
-    def __init__(self, model_name: Optional[str] = None):
+    def __init__(self, model_name: Optional[str] = "doubao"):
         self.settings = get_settings()
         self.model_name = model_name or self.settings.llm_current
         self.model_config = get_current_llm_config(self.settings)
@@ -42,7 +42,7 @@ class LLMClient:
         """
         try:
             args = self._prepare_litellm_args(messages=messages, **kwargs)
-            self.logger.info(f"[LLMClient] chat 调用模型: {args.get('model')}, provider key: {args.get('api_key')}, api_base: {args.get('api_base')}")
+            self.logger.debug(f"[LLMClient] chat 调用模型: {args.get('model')}, provider key: {args.get('api_key')}, api_base: {args.get('api_base')}")
             response = litellm.completion(**args)
             self.logger.debug(f"[LLMClient] chat 返回: {response}")
             return response
