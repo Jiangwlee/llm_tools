@@ -8,22 +8,23 @@ import os
 class LLMModelConfig(BaseModel):
     api_url: str
     api_key: str
-    model: str
+    model: str  # provider/model 格式
     timeout: int = 30
     max_tokens: int = 4096
     extra: Dict[str, Any] = {}
 
 LLM_DICT = {
+    # doubao 目前 liteLLM 官方未直接支持，保留配置但不推荐直接调用
     "doubao": LLMModelConfig(
         api_url="https://ark.cn-beijing.volces.com/api/v3/",
         api_key=os.getenv("DOUBAO_API_KEY", None),
-        model="doubao-1.5-pro-32k-250115",
-        max_tokens=32768
+        model="openai/doubao-1.5-pro-32k-250115",  # 暂不支持 provider/model 格式
+        max_tokens=16384
     ),
     "deepseek": LLMModelConfig(
         api_url="https://api.deepseek.com",
         api_key=os.getenv("DEEPSEEK_API_KEY", None),
-        model="deepseek-chat",
+        model="deepseek/deepseek-chat",  # 推荐 provider/model 格式
         max_tokens=4096
     )
 }
@@ -61,4 +62,12 @@ def get_current_llm_config(settings: Settings = None) -> LLMModelConfig:
     """
     if settings is None:
         settings = get_settings()
-    return settings.llm_models[settings.llm_current] 
+    return settings.llm_models[settings.llm_current]
+
+def set_current_llm(model_name: str):
+    """
+    一键切换当前激活大模型，并清理缓存
+    :param model_name: 目标模型名（如 deepseek/openai/qwen）
+    """
+    os.environ["LLM_CURRENT"] = model_name
+    get_settings.cache_clear() 

@@ -15,7 +15,7 @@ class LLMClient:
 
     def _prepare_litellm_args(self, **kwargs) -> dict:
         """
-        按 liteLLM 官方文档准备参数
+        按 liteLLM 官方文档准备参数，并输出调试信息
         """
         args = {
             "model": self.model_config.model,
@@ -30,6 +30,7 @@ class LLMClient:
             args["api_version"] = getattr(self.model_config, "api_version", None)
         # 允许用户自定义参数覆盖
         args.update(kwargs)
+        self.logger.debug(f"[LLMClient] 调用参数: {args}")
         return args
 
     def chat(self, messages: List[Dict[str, str]], **kwargs) -> Any:
@@ -41,7 +42,9 @@ class LLMClient:
         """
         try:
             args = self._prepare_litellm_args(messages=messages, **kwargs)
+            self.logger.info(f"[LLMClient] chat 调用模型: {args.get('model')}, provider key: {args.get('api_key')}, api_base: {args.get('api_base')}")
             response = litellm.completion(**args)
+            self.logger.debug(f"[LLMClient] chat 返回: {response}")
             return response
         except Exception as e:
             self.logger.error(f"LLM调用失败: {str(e)}")
@@ -56,7 +59,9 @@ class LLMClient:
         """
         try:
             args = self._prepare_litellm_args(messages=messages, **kwargs)
+            self.logger.info(f"[LLMClient] achat 调用模型: {args.get('model')}, provider key: {args.get('api_key')}, api_base: {args.get('api_base')}")
             response = await litellm.acompletion(**args)
+            self.logger.debug(f"[LLMClient] achat 返回: {response}")
             return response
         except Exception as e:
             self.logger.error(f"LLM异步调用失败: {str(e)}")
