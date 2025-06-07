@@ -147,7 +147,7 @@ class BiddingCSG:
     """
     不要使用 requests, 目标网站有爬虫检测, 简单爬虫容易被检测到, 导致封 IP.
     """
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=True):
         """初始化 Playwright 和浏览器实例"""
         self.playwright = sync_playwright().start()
         self.browser = self.playwright.chromium.launch(headless=not verbose, args=["--disable-blink-features=AutomationControlled"])  # 设置为 False 以便调试
@@ -691,12 +691,17 @@ class BiddingCsgAnalyzer:
                 connection.close()
                 logger.info("数据库连接已关闭")
 
-def get_price_info(keyword: str, bidding_type=None):
+def get_price_info(keyword: str, bidding_type=None, max_pages: int = 10):
     """
     下载招投标成交信息.
+    
+    参数:
+        - keyword: 甲方公司名称
+        - bidding_type: 公告类型，1=投标报价，2=投标费率
+        - max_pages: 最大爬取页数，默认为10页
     """
     csg = BiddingCSG(verbose=True)
-    csg.search(keyword)
+    csg.search(keyword, max_page=max_pages)
     csg.save_to_db()
     csg.filter(keyword, bidding_type)
     if bidding_type == 1:
@@ -718,12 +723,13 @@ def query_price(keyword: str, bidding_type: int):
 import argparse
 
 USAGE = """
-# 下载历史中标成交价格
-
+# 下载历史中标成交价格（默认爬取10页）
 python bidding_csg.py -d -n "汕头供电局" -t 1
 
-# 导出到 csv 文件
+# 下载历史中标成交价格（指定爬取5页）
+python bidding_csg.py -d -n "汕头供电局" -t 1 -m 5
 
+# 导出到 csv 文件
 python bidding_csg.py -q -n "汕头供电局" -t 1
 """
 
@@ -734,6 +740,7 @@ if __name__ == '__main__':
     parser.add_argument("-q", action="store_true", help="执行 query_price 来查询成交价格")
     parser.add_argument("-n", type=str, help="要查询的甲方单位名称", required=True)
     parser.add_argument("-t", type=int, choices=[1, 2], help="公告类型: 1=投标报价, 2=投标费率")
+    parser.add_argument("-m", "--max-pages", type=int, default=10, help="设置最大爬取页数，默认为10页")
 
     args = parser.parse_args()
 
@@ -747,8 +754,8 @@ if __name__ == '__main__':
     logger.info(f"查询关键字: {keyword}")
 
     if args.d:
-        logger.info("执行 get_price_info")
-        get_price_info(keyword, args.t)
+        logger.info(f"执行 get_price_info，最大爬取页数: {args.max_pages}")
+        get_price_info(keyword, args.t, max_pages=args.max_pages)
     if args.q:
         logger.info("执行 query_price")
         query_price(keyword, args.t)

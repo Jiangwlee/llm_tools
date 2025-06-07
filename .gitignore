@@ -9,3 +9,4 @@ dist/
 *.jsonl
 llm_tools.code-workspace
 __pycache__/
+uv.lock
