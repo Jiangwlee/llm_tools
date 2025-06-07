@@ -1,0 +1,4 @@
+2025-06-07 18:04:58 [INFO] test_logger: test info message
+2025-06-07 18:04:58 [ERROR] test_logger: test error message
+2025-06-07 18:05:37 [INFO] test_logger: test info message
+2025-06-07 18:05:37 [ERROR] test_logger: test error message
