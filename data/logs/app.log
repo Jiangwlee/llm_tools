@@ -435,3 +435,38 @@ LiteLLM completion() model= doubao-1.5-pro-32k-250115; provider = openai
 2025-06-07 22:28:49 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1.5-pro-32k-250115
 2025-06-07 22:28:49 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
 2025-06-07 22:28:49 [INFO] LiteLLM: selected model name for cost calculation: doubao-1.5-pro-32k-250115
+2025-06-07 22:38:07 [INFO] root: 开始访问链接: https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml
+2025-06-07 22:38:15 [INFO] LiteLLM: 
+LiteLLM completion() model= doubao-1.5-pro-32k-250115; provider = openai
+2025-06-07 22:38:35 [INFO] httpx: HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-06-07 22:38:35 [INFO] LiteLLM: Wrapper: Completed Call, calling success_handler
+2025-06-07 22:38:35 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:38:35 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:38:35 [INFO] LiteLLM: selected model name for cost calculation: doubao-1.5-pro-32k-250115
+2025-06-07 22:38:35 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1.5-pro-32k-250115
+2025-06-07 22:38:35 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:38:35 [INFO] LiteLLM: selected model name for cost calculation: doubao-1.5-pro-32k-250115
+2025-06-07 22:49:42 [INFO] root: 开始访问链接: https://www.bidding.csg.cn/zbgg/1200395704.jhtml
+2025-06-07 22:49:47 [INFO] root: 提取招标基本信息
+2025-06-07 22:49:47 [INFO] LiteLLM: 
+LiteLLM completion() model= doubao-1.5-pro-32k-250115; provider = openai
+2025-06-07 22:50:15 [INFO] httpx: HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-06-07 22:50:15 [INFO] LiteLLM: Wrapper: Completed Call, calling success_handler
+2025-06-07 22:50:15 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:50:15 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:50:15 [INFO] LiteLLM: selected model name for cost calculation: doubao-1.5-pro-32k-250115
+2025-06-07 22:50:15 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1.5-pro-32k-250115
+2025-06-07 22:50:15 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:50:15 [INFO] LiteLLM: selected model name for cost calculation: doubao-1.5-pro-32k-250115
+2025-06-07 22:54:24 [INFO] root: 开始访问链接: https://www.bidding.csg.cn/zbgg/1200395704.jhtml
+2025-06-07 22:54:29 [INFO] root: 提取招标基本信息
+2025-06-07 22:54:29 [INFO] LiteLLM: 
+LiteLLM completion() model= doubao-1.5-pro-32k-250115; provider = openai
+2025-06-07 22:55:01 [INFO] httpx: HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-06-07 22:55:01 [INFO] LiteLLM: Wrapper: Completed Call, calling success_handler
+2025-06-07 22:55:01 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:55:01 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:55:01 [INFO] LiteLLM: selected model name for cost calculation: doubao-1.5-pro-32k-250115
+2025-06-07 22:55:01 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1.5-pro-32k-250115
+2025-06-07 22:55:01 [INFO] LiteLLM: selected model name for cost calculation: openai/doubao-1-5-pro-32k-250115
+2025-06-07 22:55:01 [INFO] LiteLLM: selected model name for cost calculation: doubao-1.5-pro-32k-250115
