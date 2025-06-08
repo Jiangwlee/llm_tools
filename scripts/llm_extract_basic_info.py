@@ -7,7 +7,7 @@ import asyncio
 import json
 from src.llm_tools_v1.core.config import set_current_llm
 from src.llm_tools_v1.core.logging import setup_logging
-from src.llm_tools_v1.ai.llm_parser import extract_bidding_info
+from src.llm_tools_v1.ai.llm_parser import aextract_bidding_info
 from src.llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
 from src.llm_tools_v1.db.async_session import get_async_session
 from src.llm_tools_v1.services.bidding_service import BiddingService, BiddingCreate
@@ -51,9 +51,14 @@ async def main():
 
     crawler = BiddingCsgCrawler()
     html_content = await crawler.async_read_bidding_page(args.url)
-    print(html_content)
-    llm_result = extract_bidding_info(html_content)
-    print("大模型抽取结果：", llm_result)
+    # print(html_content)
+    llm_result = await aextract_bidding_info(html_content)
+    if llm_result.success:
+        llm_result = llm_result.content
+        print("大模型抽取结果：", llm_result)
+    else:
+        print("大模型抽取失败：", llm_result.error)
+        return
 
     # 假设 llm_result 是 JSON 字符串或结构化文本，需解析为 dict
     try:
