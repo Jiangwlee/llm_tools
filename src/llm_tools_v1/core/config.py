@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")
     env: str = Field("dev", validation_alias="ENV")
 
+    # 数据库配置
+    db_type: str = Field("sqlite", validation_alias="DB_TYPE")
+    db_async_url: str = Field("sqlite+aiosqlite:///data/llm_tools.db", validation_alias="DB_ASYNC_URL")
+    db_echo: bool = Field(False, validation_alias="DB_ECHO")
+
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8"

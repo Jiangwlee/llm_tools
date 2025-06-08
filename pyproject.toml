@@ -25,6 +25,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
+  "aiosqlite>=0.20.0",
   "bs4>=0.0.2",
   "litellm>=1.72.2",
   "mysql-connector-python>=9.0.0",
