@@ -7,6 +7,8 @@ from playwright.async_api import async_playwright
 
 logger = get_logger()
 
+HEADLESS = True
+
 class BiddingCsgCrawler:
     """
     南方电网招标公告爬虫，支持同步和异步页面爬取。
@@ -93,7 +95,7 @@ class BiddingCsgCrawler:
         self.stop_crawl = False
         self.end_date = end_date
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(headless=HEADLESS)
             page = await browser.new_page()
             await page.goto(self.SEARCH_URL)
             await page.fill("input[id='txtKey']", keyword)
@@ -228,7 +230,7 @@ class BiddingCsgCrawler:
         try:
             logger.info(f"[async] 开始访问链接: {url}")
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
+                browser = await p.chromium.launch(headless=HEADLESS)
                 context = await browser.new_context()
                 page = await context.new_page()
                 await page.goto(url, wait_until='load')

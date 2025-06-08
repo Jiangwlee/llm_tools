@@ -8,6 +8,7 @@ from src.llm_tools_v1.core.logging import setup_logging
 from src.llm_tools_v1.ai.llm_parser import extract_bidding_price
 from src.llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
 
+# https://www.bidding.csg.cn/zbhxrgs/1200396266.jhtml (投标费率测试 url)
 def main():
     parser = argparse.ArgumentParser(description="大模型命令行对话工具")
     parser.add_argument("--model", type=str, default="doubao", help="指定大模型名称（如 doubao、deepseek）")
@@ -20,7 +21,7 @@ def main():
 
     crawler = BiddingCsgCrawler()
     html_content = crawler.read_bidding_page(args.url)
-    print(extract_bidding_price(html_content, args.price_type))
+    print(extract_bidding_price(html_content, args.price_type).content)
 
 if __name__ == "__main__":
     main() 

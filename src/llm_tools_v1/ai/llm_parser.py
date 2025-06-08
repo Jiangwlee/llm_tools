@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional
 from ..core.llm_service import LLMResult, chat, achat
 from ..core.config import get_settings
 from ..core.llm import LLMClient
-from ..ai.prompt_templates import SYS_BIDDING_INFO_PROMPT, SYS_BIDDING_PRICE_TYPE_ONE_PROMPT, SYS_BIDDING_PRICE_TYPE_TWO_PROMPT
+from ..ai.prompt_templates import SYS_BIDDING_INFO_PROMPT, SYS_BIDDING_PRICE_PROMPT
 from ..crawlers.biddingcsg import BiddingCsgCrawler
 import asyncio
 
@@ -25,10 +25,11 @@ def build_bidding_price_prompt(html_content: str, price_type: int = 1) -> str:
     Returns:
         str: 构建好的 prompt
     """
-    if price_type == 1:
-        return SYS_BIDDING_PRICE_TYPE_ONE_PROMPT.format(html_content=html_content)
-    else:
-        return SYS_BIDDING_PRICE_TYPE_TWO_PROMPT.format(html_content=html_content)
+    return SYS_BIDDING_PRICE_PROMPT.format(html_content=html_content)
+    # if price_type == 1:
+    #     return SYS_BIDDING_PRICE_TYPE_ONE_PROMPT.format(html_content=html_content)
+    # else:
+    #     return SYS_BIDDING_PRICE_TYPE_TWO_PROMPT.format(html_content=html_content)
 
 def extract_bidding_info(html_content: str, llm_client: Optional[LLMClient] = None) -> LLMResult:
     """
