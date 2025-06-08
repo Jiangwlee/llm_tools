@@ -78,6 +78,67 @@ class BiddingCsgCrawler:
         finally:
             self.playwright.close()
 
+    async def asearch(self, keyword: str, max_page: int = 65535, end_date: Optional[str] = None) -> List[Dict]:
+        """
+        异步检索公告。
+        Args:
+            keyword: 检索关键字
+            max_page: 最大爬取页数
+            end_date: 结束日期 (YYYY-MM-DD)
+        Returns:
+            招标公告列表
+        """
+        from playwright.async_api import async_playwright
+        self.bidding_list.clear()
+        self.stop_crawl = False
+        self.end_date = end_date
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(self.SEARCH_URL)
+            await page.fill("input[id='txtKey']", keyword)
+            await page.select_option('#types', value='服务')
+            async with page.expect_popup() as popup_info:
+                await page.click("input[class='seachBtn']")
+            prev_page = page
+            page = await popup_info.value
+            await page.locator(self.LIST_SELECTOR).wait_for(state='visible')
+            logger.info(await page.title())
+            logger.info(page.url)
+            content = await page.content()
+            match = re.search(self.PAGE_INFO_PATTERN, content)
+            if match:
+                total_records = match.group(1)
+                current_page = match.group(2)
+                total_pages = match.group(3)
+                logger.info(f"总记录数: {total_records}")
+                logger.info(f"当前页: {current_page}")
+                logger.info(f"总页数: {total_pages}")
+            else:
+                logger.warning("未找到匹配的内容")
+            self.parse(content)
+            count = 1
+            while count < max_page:
+                logger.info(f"正在处理第【{count}】页")
+                await self._anext_page(page)
+                next_page_tag = page.locator(self.NEXT_PAGE_SELECTOR)
+                if await next_page_tag.get_attribute('disabled') == 'disabled':
+                    logger.info("已处理完全部页面")
+                    break
+                if self.stop_crawl:
+                    logger.info("爬取结束")
+                    break
+                content = await page.content()
+                self.parse(content)
+                count += 1
+            await browser.close()
+            return self.bidding_list
+
+    async def _anext_page(self, page):
+        """异步点击下一页按钮"""
+        await page.click(self.NEXT_PAGE_SELECTOR)
+        await page.wait_for_timeout(1000)
+
     def next_page(self) -> None:
         """
         打开下一页。
@@ -189,8 +250,8 @@ class BiddingCsgCrawler:
 
 if __name__ == "__main__":
     crawler = BiddingCsgCrawler()
-    # result = crawler.search("广州供电局", max_page=3)
-    # for item in result:
-    #     print(item)
+    result = crawler.search("广州供电局", max_page=3)
+    for item in result:
+        print(item)
 
-    print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml"))
+    # print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml"))
