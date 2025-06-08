@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # 数据库配置
     db_type: str = Field("sqlite", validation_alias="DB_TYPE")
-    db_async_url: str = Field("sqlite+aiosqlite:///data/llm_tools.db", validation_alias="DB_ASYNC_URL")
+    db_async_url: str = Field("sqlite+aiosqlite:///data/db/llm_tools.db", validation_alias="DB_ASYNC_URL")
     db_echo: bool = Field(False, validation_alias="DB_ECHO")
 
     model_config = ConfigDict(

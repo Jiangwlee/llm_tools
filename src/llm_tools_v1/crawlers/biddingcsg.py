@@ -3,12 +3,13 @@ from typing import Optional, List, Dict
 from ..core.logging import get_logger
 from .common import PlaywrightCrawler
 from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 
 logger = get_logger()
 
 class BiddingCsgCrawler:
     """
-    南方电网招标公告爬虫，仅负责页面爬取和结构化数据提取。
+    南方电网招标公告爬虫，支持同步和异步页面爬取。
     """
     SEARCH_URL = "https://www.bidding.csg.cn/dbsearch.jspx?q="
     LIST_SELECTOR = "div.List2"
@@ -156,6 +157,35 @@ class BiddingCsgCrawler:
             return None
         finally:
             self.playwright.close()
+
+    async def async_read_bidding_page(self, url: str) -> Optional[Dict]:
+        """
+        异步读取标讯页面，返回结构化内容。
+        :param url: 招标公告的URL
+        :return: dict {title, date, content}
+        """
+        try:
+            logger.info(f"[async] 开始访问链接: {url}")
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context()
+                page = await context.new_page()
+                await page.goto(url, wait_until='load')
+                await page.wait_for_selector('div.s-content', state='visible')
+                html = await page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+                title_tag = soup.find('h1', class_='s-title')
+                date_tag = soup.find('div', class_='s-date')
+                content_div = soup.find('div', class_='Content')
+                await browser.close()
+                return {
+                    "title": title_tag.text if title_tag else None,
+                    "date": date_tag.text if date_tag else None,
+                    "content": content_div.text if content_div else None
+                }
+        except Exception as e:
+            logger.error(f"[async] 访问链接时发生错误: {url}。 错误信息: {e}")
+            return None
 
 if __name__ == "__main__":
     crawler = BiddingCsgCrawler()

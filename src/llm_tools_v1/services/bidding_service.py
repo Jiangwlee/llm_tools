@@ -108,4 +108,20 @@ class BiddingPackageService:
             return False
         await db.delete(package)
         await db.commit()
-        return True 
+        return True
+
+    @staticmethod
+    async def create_multi_packages(data_list: list["BiddingPackageCreate"], db: AsyncSession) -> list[BiddingPackage]:
+        """
+        批量插入标包记录（不 commit，由外部统一 commit）
+        :param data_list: 标包 Pydantic schema 列表
+        :param db: 异步数据库会话
+        :return: 新建的 BiddingPackage 对象列表
+        """
+        packages = []
+        for data in data_list:
+            package = BiddingPackage(**data.model_dump())
+            db.add(package)
+            packages.append(package)
+        await db.flush()  # 确保主键 id 可用
+        return packages 
