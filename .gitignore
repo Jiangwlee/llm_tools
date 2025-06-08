@@ -10,3 +10,4 @@ dist/
 llm_tools.code-workspace
 __pycache__/
 uv.lock
+data/
