@@ -43,4 +43,7 @@ def map_llm_package_to_schema(pkg: dict) -> dict:
     :param pkg: LLM 输出的标包 dict
     :return: schema 字段 dict
     """
-    return {schema_key: pkg.get(llm_key) for llm_key, schema_key in PACKAGE_FIELD_MAP.items()} 
+    mapped =  {schema_key: pkg.get(llm_key) for llm_key, schema_key in PACKAGE_FIELD_MAP.items()} 
+    if mapped.get("max_bid_amount") and isinstance(mapped.get("max_bid_amount"), str):
+        mapped["max_bid_amount"] = mapped["estimated_amount"]
+    return mapped

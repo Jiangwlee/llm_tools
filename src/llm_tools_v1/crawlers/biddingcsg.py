@@ -1,13 +1,35 @@
 import re
 from typing import Optional, List, Dict
-from ..core.logging import get_logger
-from .common import PlaywrightCrawler
+from llm_tools_v1.core.logging import get_logger
+from llm_tools_v1.crawlers.common import PlaywrightCrawler
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+from pydantic import BaseModel
+from enum import Enum, auto
 
 logger = get_logger()
 
 HEADLESS = True
+
+class BiddingType(Enum):
+    """招标类型枚举"""
+    BIDDING = "招标公告"
+    AWARD = "中标公示"
+    OTHER = "其他"
+    ALL = "all"
+
+class BiddingListItem(BaseModel):
+    type: str
+    part_a: str
+    project: str
+    date: str
+    url: str
+
+class BiddingPageDetail(BaseModel):
+    title: str
+    date: str
+    content: str
+    type: BiddingType
 
 class BiddingCsgCrawler:
     """
@@ -80,7 +102,7 @@ class BiddingCsgCrawler:
         finally:
             self.playwright.close()
 
-    async def asearch(self, keyword: str, max_page: int = 65535, end_date: Optional[str] = None) -> List[Dict]:
+    async def asearch(self, keyword: str, max_page: int = 65535, end_date: Optional[str] = None) -> List[BiddingListItem]:
         """
         异步检索公告。
         Args:
@@ -88,14 +110,14 @@ class BiddingCsgCrawler:
             max_page: 最大爬取页数
             end_date: 结束日期 (YYYY-MM-DD)
         Returns:
-            招标公告列表
+            BiddingListItem 列表
         """
         from playwright.async_api import async_playwright
         self.bidding_list.clear()
         self.stop_crawl = False
         self.end_date = end_date
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=HEADLESS)
+            browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             await page.goto(self.SEARCH_URL)
             await page.fill("input[id='txtKey']", keyword)
@@ -134,7 +156,8 @@ class BiddingCsgCrawler:
                 self.parse(content)
                 count += 1
             await browser.close()
-            return self.bidding_list
+            # 直接 Pydantic 化返回
+            return [BiddingListItem(**item) for item in self.bidding_list]
 
     async def _anext_page(self, page):
         """异步点击下一页按钮"""
@@ -182,7 +205,7 @@ class BiddingCsgCrawler:
         except Exception as e:
             logger.error(f"读取内容失败: {e}")
 
-    def read_bidding_page(self, url):
+    def read_bidding_page(self, url) -> Optional[BiddingPageDetail]:
         """
         阅读标讯。
 
@@ -192,13 +215,7 @@ class BiddingCsgCrawler:
             url (str): 招标公告的URL。
 
         返回值：
-            dict: 包含招标公告的标题、日期和正文内容的字典。
-                  字典的结构如下：
-                  {
-                      "title": str,    # 招标公告的标题
-                      "date": str,     # 招标公告的日期
-                      "content": str   # 招标公告的正文内容
-                  }
+            Optional[BiddingPageDetail]: 包含招标公告的标题、日期和正文内容的对象。
         """
         try:
             logger.info(f"开始访问链接: {url}")
@@ -210,18 +227,19 @@ class BiddingCsgCrawler:
             title_tag = soup.find('h1', class_='s-title')
             date_tag = soup.find('div', class_='s-date')
             content_div = soup.find('div', class_='Content')
-            return {
-                "title": title_tag.text,
-                "date": date_tag.text,
-                "content": content_div.text
-            }
+            return BiddingPageDetail(
+                title=title_tag.text if title_tag else '',
+                date=date_tag.text if date_tag else '',
+                content=content_div.text if content_div else '',
+                type=self.parse_bidding_type(title_tag.text if title_tag else '')
+            )
         except Exception as e:
             logger.error(f"访问链接时发生错误: {url}。 错误信息: {e}")
             return None
         finally:
             self.playwright.close()
 
-    async def async_read_bidding_page(self, url: str) -> Optional[Dict]:
+    async def async_read_bidding_page(self, url: str) -> Optional[BiddingPageDetail]:
         """
         异步读取标讯页面，返回结构化内容。
         :param url: 招标公告的URL
@@ -241,19 +259,37 @@ class BiddingCsgCrawler:
                 date_tag = soup.find('div', class_='s-date')
                 content_div = soup.find('div', class_='Content')
                 await browser.close()
-                return {
-                    "title": title_tag.text if title_tag else None,
-                    "date": date_tag.text if date_tag else None,
-                    "content": content_div.text if content_div else None
-                }
+                return BiddingPageDetail(
+                    title=title_tag.text if title_tag else '',
+                    date=date_tag.text if date_tag else '',
+                    content=content_div.text if content_div else '',
+                    type=self.parse_bidding_type(title_tag.text if title_tag else '')
+                )
         except Exception as e:
             logger.error(f"[async] 访问链接时发生错误: {url}。 错误信息: {e}")
             return None
 
+    def parse_bidding_type(self, title: str) -> BiddingType:
+        """
+        解析招标类型。
+        Args:
+            title: 公告标题
+        Returns:
+            BiddingType: 招标类型枚举值
+        """
+        if "招标公告" in title:
+            return BiddingType.BIDDING
+        elif "中标公示" in title:
+            return BiddingType.AWARD
+        else:
+            return BiddingType.OTHER
+
 if __name__ == "__main__":
     crawler = BiddingCsgCrawler()
     result = crawler.search("广州供电局", max_page=3)
-    for item in result:
-        print(item)
+    # for item in result:
+    #     print(item)
 
-    # print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml"))
+    print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml"))
+    print("--------------------------------")
+    print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbgg/1200396362.jhtml"))

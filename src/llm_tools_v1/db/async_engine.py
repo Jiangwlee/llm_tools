@@ -4,7 +4,7 @@
 """
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from functools import lru_cache
-from ..core.config import get_settings
+from llm_tools_v1.core.config import get_settings
 
 @lru_cache()
 def get_async_engine():

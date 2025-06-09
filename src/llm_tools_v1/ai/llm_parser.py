@@ -1,9 +1,9 @@
 from typing import Any, Dict, Optional
-from ..core.llm_service import LLMResult, chat, achat
-from ..core.config import get_settings
-from ..core.llm import LLMClient
-from ..ai.prompt_templates import SYS_BIDDING_INFO_PROMPT, SYS_BIDDING_PRICE_PROMPT
-from ..crawlers.biddingcsg import BiddingCsgCrawler
+from llm_tools_v1.core.llm_service import LLMResult, chat, achat
+from llm_tools_v1.core.config import get_settings
+from llm_tools_v1.core.llm import LLMClient
+from llm_tools_v1.ai.prompt_templates import SYS_BIDDING_INFO_PROMPT, SYS_BIDDING_PRICE_PROMPT
+from llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
 import asyncio
 
 def build_bidding_info_prompt(html_content: str) -> str:
