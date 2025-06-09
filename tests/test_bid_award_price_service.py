@@ -1,11 +1,15 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 import pytest
 import pytest_asyncio
 import asyncio
 from sqlmodel import SQLModel, create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from src.llm_tools_v1.db.models import BidAwardPrice
-from src.llm_tools_v1.services.bid_award_price_service import BidAwardPriceService, BidAwardPriceCreate
+from sqlalchemy import text
+from llm_tools_v1.db.models import BidAwardPrice, Bidding, BiddingPackage
+from llm_tools_v1.services.bid_award_price_service import BidAwardPriceService, BidAwardPriceCreate, BidAwardPriceInfo
 
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -97,4 +101,58 @@ async def test_create_multi_prices(async_session):
     # 检查一条
     price = await BidAwardPriceService.get_price_by_bidding_no_and_package("BID004", "包3", async_session)
     assert price is not None
-    assert price.price_value == 23.0 
+    assert price.price_value == 23.0
+
+@pytest.mark.asyncio
+async def test_list_award_price_infos(async_session):
+    """
+    测试 list_award_price_infos 查询所有中标公示详细信息
+    """
+    # 插入 Bidding
+    bidding = Bidding(bidding_no="BID100", url="http://bidding/100", project="项目100", owner="测试招标单位")
+    async_session.add(bidding)
+    await async_session.commit()
+    await async_session.refresh(bidding)
+    # 插入 BiddingPackage
+    package = BiddingPackage(
+        bidding_id=bidding.id,
+        subject="标的100",
+        package_name="包100",
+        estimated_amount=888.0,
+        max_bid_amount=999.0
+    )
+    async_session.add(package)
+    await async_session.commit()
+    await async_session.refresh(package)
+    # 插入 BidAwardPrice
+    price = BidAwardPrice(
+        bidding_no="BID100",
+        subject="标的100",
+        package_name="包100",
+        candidate="中标公司",
+        price_type="数字",
+        price_value=777.0,
+        price_percent=None,
+        url="http://award/100"
+    )
+    async_session.add(price)
+    await async_session.commit()
+    # 查询
+    infos = await BidAwardPriceService.list_award_price_infos(async_session, owner="测试招标单位")
+    assert len(infos) >= 1
+    info = [i for i in infos if i.bidding_no == "BID100" and i.subject == "标的100"]
+    assert info, "应能查到插入的数据"
+    info = info[0]
+    assert info.project == "项目100"
+    assert info.estimated_amount == 888.0
+    assert info.max_bid_amount == 999.0
+    assert info.price_value == 777.0
+    assert info.price_type == "数字"
+    assert info.owner == "测试招标单位"
+    assert info.award_url == "http://award/100"
+    assert info.bidding_url == "http://bidding/100"
+    # 边界：无匹配数据
+    await async_session.execute(text("DELETE FROM bidawardprice"))
+    await async_session.commit()
+    infos = await BidAwardPriceService.list_award_price_infos(async_session, owner="测试招标单位")
+    assert all(i.bidding_no != "BID100" for i in infos) 

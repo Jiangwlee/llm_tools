@@ -3,7 +3,8 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, delete
-from src.llm_tools_v1.db.models import BidAwardPrice
+from llm_tools_v1.db.models import BidAwardPrice, Bidding, BiddingPackage
+from sqlalchemy import join
 
 class BidAwardPriceCreate(BaseModel):
     """
@@ -18,6 +19,23 @@ class BidAwardPriceCreate(BaseModel):
     price_percent: Optional[float] = None
     remark: Optional[str] = None
     url: str  # 新增字段，用于保存中标公告页面 URL
+
+class BidAwardPriceInfo(BaseModel):
+    """
+    中标公示详细信息返回模型
+    """
+    bidding_no: str  # 招标编号
+    project: Optional[str] = None  # 项目名称
+    subject: str  # 标的名称
+    package_name: str  # 标包名称
+    price_type: str  # 价格类型
+    price_value: Optional[float] = None  # 价格数值
+    price_percent: Optional[float] = None  # 价格百分比
+    estimated_amount: Optional[float] = None  # 招标价格
+    max_bid_amount: Optional[float] = None  # 最高限价
+    owner: Optional[str] = None  # 招标单位
+    award_url: Optional[str] = None  # 中标公告页面 URL
+    bidding_url: Optional[str] = None  # 招标公告页面 URL
 
 class BidAwardPriceService:
     """
@@ -87,4 +105,58 @@ class BidAwardPriceService:
             db.add(price)
             prices.append(price)
         await db.flush()
-        return prices 
+        return prices
+
+    @staticmethod
+    async def list_award_price_infos(db: AsyncSession, owner: str = None) -> List[BidAwardPriceInfo]:
+        """
+        查询所有中标公示详细信息，可按招标单位过滤
+        :param db: 异步数据库会话
+        :param owner: 招标单位名称（可选）
+        :return: BidAwardPriceInfo 列表
+        """
+        j1 = join(
+            BidAwardPrice, Bidding, BidAwardPrice.bidding_no == Bidding.bidding_no, isouter=True
+        )
+        j2 = join(
+            j1,
+            BiddingPackage,
+            (BiddingPackage.bidding_id == Bidding.id) &
+            (BiddingPackage.subject == BidAwardPrice.subject) &
+            (BiddingPackage.package_name == BidAwardPrice.package_name),
+            isouter=True
+        )
+        stmt = select(
+            BidAwardPrice.bidding_no,
+            Bidding.project,
+            BidAwardPrice.subject,
+            BidAwardPrice.package_name,
+            BidAwardPrice.price_type,
+            BidAwardPrice.price_value,
+            BidAwardPrice.price_percent,
+            BiddingPackage.estimated_amount,
+            BiddingPackage.max_bid_amount,
+            Bidding.owner,
+            BidAwardPrice.url.label("award_url"),
+            Bidding.url.label("bidding_url")
+        ).select_from(j2)
+        if owner:
+            stmt = stmt.where(Bidding.owner.contains(owner))
+        result = await db.execute(stmt)
+        rows = result.all()
+        return [
+            BidAwardPriceInfo(
+                bidding_no=row.bidding_no,
+                project=row.project,
+                subject=row.subject,
+                package_name=row.package_name,
+                price_type=row.price_type,
+                price_value=row.price_value,
+                price_percent=row.price_percent,
+                estimated_amount=row.estimated_amount,
+                max_bid_amount=row.max_bid_amount,
+                owner=row.owner,
+                award_url=row.award_url,
+                bidding_url=row.bidding_url
+            ) for row in rows
+        ] 

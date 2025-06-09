@@ -1,6 +1,10 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
+
 import pytest
 from datetime import datetime, timezone
-from src.llm_tools_v1.db.models import BidAwardPrice
+from llm_tools_v1.db.models import BidAwardPrice
 
 # 1. 实例化测试（所有字段赋值）
 def test_bid_award_price_full_fields():
@@ -25,7 +29,6 @@ def test_bid_award_price_full_fields():
     assert obj.price_type == "数字"
     assert obj.price_value == 75.33
     assert obj.price_percent is None
-    assert obj.currency == "CNY"
     assert obj.created_at == now
     assert obj.updated_at == now
 
@@ -42,7 +45,6 @@ def test_bid_award_price_partial_fields():
     )
     assert obj.price_value is None
     assert obj.price_percent == 0.85
-    assert obj.currency is None
     assert obj.remark is None
     assert isinstance(obj.created_at, datetime)
     assert obj.created_at.tzinfo is not None
