@@ -9,8 +9,6 @@ from llm_tools_v1.db.async_session import get_async_session
 from llm_tools_v1.utils.llm_mapping import map_llm_bidding_to_schema, map_llm_package_to_schema
 from llm_tools_v1.services.bidding_service import BiddingService, BiddingPackageService, BiddingCreate, BiddingPackageCreate
 from llm_tools_v1.core.logging import get_logger
-# from src.llm_tools_v1.services.bidding_service import BiddingService, BiddingCreate
-# from src.llm_tools_v1.services.bid_award_price_service import BidAwardPriceService, BidAwardPriceCreate
 
 logger = get_logger()
 
@@ -151,38 +149,38 @@ class BiddingInfoExtractor:
                 # TODO: 根据公告类型选择不同的提取和入库逻辑
                 if type == BiddingType.BIDDING:
                     llm_result = await aextract_bidding_info(html_content)
-                    print("--------------------------------")
+                    logger.debug("--------------------------------")
                     if llm_result.success:
-                        print("成功解析招标公告：")
+                        logger.info("成功解析招标公告：")
                         content = llm_result.content
-                        print(f"content: {content}")
+                        logger.debug(f"content: {content}")
                         bidding_data_raw = parse_llm_result(content)
-                        print(f"bidding_data: {bidding_data_raw}")
+                        logger.debug(f"bidding_data: {bidding_data_raw}")
                         # TODO: 解析和入库 Bidding 信息
                         if not bidding_data_raw:
                             return
                         await save_bidding_and_packages(bidding_data_raw, url=url)
                     else:
-                        print(f"解析失败: {llm_result.error}")
+                        logger.error(f"解析失败: {llm_result.error}")
                 if type == BiddingType.AWARD:
                     llm_result = await aextract_bidding_price(html_content)
-                    print("--------------------------------")
+                    logger.debug("--------------------------------")
                     if llm_result.success:
-                        print("成功解析中标公示：")
+                        logger.info("成功解析中标公示：")
                         content = llm_result.content
-                        print(f"content: {content}")
+                        logger.debug(f"content: {content}")
                         bidding_data_raw = parse_llm_result(content)
-                        print(f"bidding_data: {bidding_data_raw}")
+                        logger.debug(f"bidding_data: {bidding_data_raw}")
                     else:
-                        print(f"解析失败: {llm_result.error}")
+                        logger.error(f"解析失败: {llm_result.error}")
 
                     # TODO: 解析和入库 BidAwardPrice 信息
                 else:
-                    print(f"其他类型公告，不处理, url: {url}")
+                    logger.info(f"其他类型公告，不处理, url: {url}")
                 # 处理成功，记录到 processed_urls
                 self.processed_urls.add(url)
                 save_json_set(PROCESSED_URLS_FILE, self.processed_urls)
-                print(f"处理成功: {url}")
+                logger.info(f"处理成功: {url}")
             except Exception as e:
                 # 记录失败的 url 和错误信息
                 self.failed_urls[url] = str(e)
@@ -197,25 +195,25 @@ async def main():
     if args.test_url:
         html_content = await extractor.fetch_html(args.test_url)
         # TODO: 根据 URL 类型自动选择提取方式并打印结果
-        print(html_content[:500])  # 仅打印前500字符做示例
+        logger.debug(html_content[:500])  # 仅打印前500字符做示例
         return
 
-    print(args.keyword)
-    print(args.max_page)
-    print(args.type)
+    logger.debug(args.keyword)
+    logger.debug(args.max_page)
+    logger.debug(args.type)
     bidding_list = await extractor.fetch_list(args.keyword, args.max_page)
-    print(f"共获取到 {len(bidding_list)} 条公告")
-    print(f"已处理的url: {extractor.processed_urls}")
+    logger.info(f"共获取到 {len(bidding_list)} 条公告")
+    logger.info(f"已处理的url: {extractor.processed_urls}")
     # 跳过已处理的 url
     to_process = [b for b in bidding_list if b.url not in extractor.processed_urls]
-    print(f"共需要处理 {len(to_process)} 条公告")
-    print(to_process)
+    logger.info(f"共需要处理 {len(to_process)} 条公告")
+    logger.debug(to_process)
     async with get_async_session() as session:
         await asyncio.gather(*[
             extractor.process_bidding(bidding, session)
             for bidding in to_process
         ])
-    print("全部处理完成！")
+    logger.info("全部处理完成！")
 
 
 async def test_fetch_list():
@@ -226,21 +224,21 @@ async def test_fetch_list():
         keyword = "广州供电局"
         max_page = 2
         
-        print(f"开始测试 fetch_list，关键词: {keyword}, 最大页数: {max_page}")
+        logger.info(f"开始测试 fetch_list，关键词: {keyword}, 最大页数: {max_page}")
         bidding_list = await extractor.fetch_list(keyword, max_page)
         
         # 打印结果统计
-        print(f"获取到 {len(bidding_list)} 条公告")
+        logger.info(f"获取到 {len(bidding_list)} 条公告")
         
         # 打印前3条记录详情
         for i, bidding in enumerate(bidding_list, 1):
-            print(f"\n第 {i} 条公告:")
-            print(f"{bidding}")
+            logger.info(f"\n第 {i} 条公告:")
+            logger.info(f"{bidding}")
             
         return bidding_list
         
     except Exception as e:
-        print(f"测试过程中发生错误: {e}")
+        logger.error(f"测试过程中发生错误: {e}")
         raise
 
 if __name__ == "__main__":
