@@ -17,6 +17,7 @@ class BidAwardPriceCreate(BaseModel):
     price_value: Optional[float] = None
     price_percent: Optional[float] = None
     remark: Optional[str] = None
+    url: str  # 新增字段，用于保存中标公告页面 URL
 
 class BidAwardPriceService:
     """

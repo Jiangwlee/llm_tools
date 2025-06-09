@@ -50,5 +50,6 @@ class BidAwardPrice(SQLModel, table=True):
     price_value: Optional[float] = Field(default=None, description="中标价格（数字类型时填写）")
     price_percent: Optional[float] = Field(default=None, description="中标价格百分比（百分比类型时填写，0.85表示85%）")
     remark: Optional[str] = Field(default=None, max_length=255, description="备注")
+    url: str = Field(nullable=False, max_length=512, description="中标公告页面 URL")
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间") 

@@ -16,6 +16,7 @@ def test_bid_award_price_full_fields():
         price_percent=None,
         currency="CNY",
         remark="测试数据",
+        url="http://example.com/award/test",
         created_at=now,
         updated_at=now
     )
@@ -36,7 +37,8 @@ def test_bid_award_price_partial_fields():
         package_name="标包4",
         candidate="三峡大学",
         price_type="百分比",
-        price_percent=0.85
+        price_percent=0.85,
+        url="http://example.com/award/test2"
     )
     assert obj.price_value is None
     assert obj.price_percent == 0.85
@@ -59,7 +61,8 @@ def test_bid_award_price_field_types():
         package_name="标包5",
         candidate="珠江水利委员会珠江水利科学研究院",
         price_type="数字",
-        price_value=123.45
+        price_value=123.45,
+        url="http://example.com/award/test3"
     )
     assert isinstance(obj.bidding_no, str)
     assert isinstance(obj.subject, str)

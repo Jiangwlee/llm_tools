@@ -27,7 +27,8 @@ async def test_create_price(async_session):
         package_name="包A",
         candidate="公司A",
         price_type="数字",
-        price_value=100.0
+        price_value=100.0,
+        url="http://example.com/award/1"
     )
     price = await BidAwardPriceService.create_price(data, async_session)
     assert price.id is not None
@@ -44,7 +45,8 @@ async def test_get_price_by_bidding_no_and_package(async_session):
         package_name="包B",
         candidate="公司B",
         price_type="百分比",
-        price_percent=0.85
+        price_percent=0.85,
+        url="http://example.com/award/2"
     )
     await BidAwardPriceService.create_price(data, async_session)
     # 查询
@@ -64,7 +66,8 @@ async def test_delete_by_bidding_no(async_session):
             package_name=f"包{i}",
             candidate=f"公司{i}",
             price_type="数字",
-            price_value=10.0 + i
+            price_value=10.0 + i,
+            url=f"http://example.com/award/3_{i}"
         )
         await BidAwardPriceService.create_price(data, async_session)
     # 删除
@@ -84,7 +87,8 @@ async def test_create_multi_prices(async_session):
             package_name=f"包{i}",
             candidate=f"公司{i}",
             price_type="数字",
-            price_value=20.0 + i
+            price_value=20.0 + i,
+            url=f"http://example.com/award/4_{i}"
         ) for i in range(5)
     ]
     prices = await BidAwardPriceService.create_multi_prices(data_list, async_session)
