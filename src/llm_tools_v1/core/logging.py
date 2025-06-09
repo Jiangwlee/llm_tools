@@ -35,6 +35,10 @@ def setup_logging(logging_level: str = "WARNING"):
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
+    # 降低第三方依赖日志级别，避免刷屏
+    for noisy_logger in ["LiteLLM", "httpx", "openai", "urllib3"]:
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
 
 def get_logger(name: str = None) -> logging.Logger:
     """

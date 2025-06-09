@@ -6,9 +6,10 @@ from typing import List, Dict, Any, Set, Optional
 from llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler, BiddingListItem, BiddingType, BiddingPageDetail
 from llm_tools_v1.ai.llm_parser import aextract_bidding_info, aextract_bidding_price
 from llm_tools_v1.db.async_session import get_async_session
-from llm_tools_v1.utils.llm_mapping import map_llm_bidding_to_schema, map_llm_package_to_schema
+from llm_tools_v1.utils.llm_mapping import map_llm_bidding_to_schema, map_llm_package_to_schema, map_llm_bid_award_price_to_schema
 from llm_tools_v1.services.bidding_service import BiddingService, BiddingPackageService, BiddingCreate, BiddingPackageCreate
-from llm_tools_v1.core.logging import get_logger
+from llm_tools_v1.services.bid_award_price_service import BidAwardPriceService, BidAwardPriceCreate
+from llm_tools_v1.core.logging import get_logger, setup_logging
 
 logger = get_logger()
 
@@ -73,41 +74,77 @@ def map_bidding_data(bidding_data_raw: Dict[str, Any], url: str) -> Optional[Bid
         logger.error(f"BiddingCreate 字段校验失败: {e}")
         return None
 
-def map_bidding_package_data(bidding_package_data_raw: Dict[str, Any]) -> Optional[BiddingPackageCreate]:
+def map_bidding_package_data(bidding_package_data_raw: Dict[str, Any], bidding_id: int) -> Optional[BiddingPackageCreate]:
     try:
-        bidding_package_data = map_llm_package_to_schema(bidding_package_data_raw)
+        bidding_package_data = map_llm_package_to_schema(bidding_package_data_raw, bidding_id=bidding_id)
         bidding_package_create = BiddingPackageCreate(**bidding_package_data)
         return bidding_package_create
     except Exception as e:
         logger.error(f"BiddingPackageCreate 字段校验失败: {e}")
         return None
     
+def map_bid_award_price_data(bid_award_price_data_raw: Dict[str, Any], url: str, bid_no: str) -> Optional[BidAwardPriceCreate]:
+    try:
+        bid_award_price_data = map_llm_bid_award_price_to_schema(bid_award_price_data_raw, url=url, bid_no=bid_no)
+        bid_award_price_create = BidAwardPriceCreate(**bid_award_price_data)
+        return bid_award_price_create
+    except Exception as e:
+        logger.error(f"BidAwardPriceCreate 字段校验失败: {e}")
+    
 async def save_bidding_and_packages(bidding_data_raw: Dict[str, Any], url: str) -> None:
     async with get_async_session() as session:
         try:
             # 保存招标公告
             bidding_create = map_bidding_data(bidding_data_raw, url=url)
-            bidding = await BiddingService.create_bidding(bidding_create, session)
-            logger.info(f"【招标公告】保存成功，数据库记录：{bidding}")
+            bidding_info = await BiddingService.create_bidding(bidding_create, session)
+            logger.info(f"【招标公告】保存成功，url：{url}, bidding_id：{bidding_info.id}")
             # 保存标包信息
             packages = bidding_data_raw.get("标包信息")
             if packages and isinstance(packages, list):
                 pkg_creates = []
                 for pkg in packages:
-                    pkg_create = map_bidding_package_data(pkg)
+                    pkg_create = map_bidding_package_data(pkg, bidding_id=bidding_info.id)
                     if not pkg_create:
                         continue
                     pkg_creates.append(pkg_create)
                 try:
-                    pkg_objs = await BiddingPackageService.create_multi_packages(pkg_creates, session)
+                    await BiddingPackageService.create_multi_packages(pkg_creates, session)
                     await session.commit()
-                    for pkg_obj in pkg_objs:
-                        logger.info(f"【标包】保存成功：{pkg_obj}")
+                    logger.info(f"【标包】保存成功，url：{url}")
                 except Exception as e:
                     logger.error(f"【标包】批量保存失败: {e}")
                     await session.rollback()
         except Exception as e:
             logger.error(f"【招标公告】保存到数据库失败: {e}")
+
+async def save_bid_award_price(bid_award_price_data_raw: Dict[str, Any], url: str) -> None:
+    async with get_async_session() as session:
+        try:
+            bid_no = bid_award_price_data_raw.get("招标编号")
+            if not bid_no:
+                logger.error(f"【中标价格】招标编号为空，不保存: {bid_award_price_data_raw}")
+                return
+            
+            price_list = bid_award_price_data_raw.get("评标情况")
+            if not price_list:
+                logger.error(f"【中标价格】评标情况为空，不保存: {bid_award_price_data_raw}")
+                return
+            
+            bid_award_price_creates = []
+            for price in price_list:
+                bid_award_price_create = map_bid_award_price_data(price, url=url, bid_no=bid_no)
+                if not bid_award_price_create:
+                    continue
+                bid_award_price_creates.append(bid_award_price_create)
+            try:
+                await BidAwardPriceService.create_multi_prices(bid_award_price_creates, session)
+                await session.commit()
+                logger.info(f"【中标价格】保存成功，url：{url}")
+            except Exception as e:
+                logger.error(f"【中标价格】批量保存失败: {e}")
+                await session.rollback()
+        except Exception as e:
+            logger.error(f"【中标价格】保存到数据库失败: {e}")
 
 # ========== 参数解析 ==========
 def parse_args():
@@ -146,7 +183,6 @@ class BiddingInfoExtractor:
                 logger.debug(f"html_content: {bidding_detail}")
                 type = bidding_detail.type
                 html_content = bidding_detail.content
-                # TODO: 根据公告类型选择不同的提取和入库逻辑
                 if type == BiddingType.BIDDING:
                     llm_result = await aextract_bidding_info(html_content)
                     logger.debug("--------------------------------")
@@ -156,7 +192,6 @@ class BiddingInfoExtractor:
                         logger.debug(f"content: {content}")
                         bidding_data_raw = parse_llm_result(content)
                         logger.debug(f"bidding_data: {bidding_data_raw}")
-                        # TODO: 解析和入库 Bidding 信息
                         if not bidding_data_raw:
                             return
                         await save_bidding_and_packages(bidding_data_raw, url=url)
@@ -170,11 +205,13 @@ class BiddingInfoExtractor:
                         content = llm_result.content
                         logger.debug(f"content: {content}")
                         bidding_data_raw = parse_llm_result(content)
+                        # bidding_data_raw example: [{'标的': '标的1.广州供电局2025年基于柔性直流技术的配网台区低电压治理技术服务框架', '标包': '标包1.广州供电局2025年基于柔性直流技术的配网台区低电压治理技术服务框架', '候选人': '广州电能电力工程有限公司', '价格类型': '百分比', '中标价格': 12}]
                         logger.debug(f"bidding_data: {bidding_data_raw}")
+                        if not bidding_data_raw:
+                            return
+                        await save_bid_award_price(bidding_data_raw, url=url)
                     else:
                         logger.error(f"解析失败: {llm_result.error}")
-
-                    # TODO: 解析和入库 BidAwardPrice 信息
                 else:
                     logger.info(f"其他类型公告，不处理, url: {url}")
                 # 处理成功，记录到 processed_urls
@@ -244,4 +281,5 @@ async def test_fetch_list():
 if __name__ == "__main__":
     # 运行测试
     # asyncio.run(test_fetch_list())
+    setup_logging(logging_level="INFO")
     asyncio.run(main())

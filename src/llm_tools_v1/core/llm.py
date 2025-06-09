@@ -59,7 +59,7 @@ class LLMClient:
         """
         try:
             args = self._prepare_litellm_args(messages=messages, **kwargs)
-            self.logger.info(f"[LLMClient] achat 调用模型: {args.get('model')}, provider key: {args.get('api_key')}, api_base: {args.get('api_base')}")
+            self.logger.debug(f"[LLMClient] achat 调用模型: {args.get('model')}, provider key: {args.get('api_key')}, api_base: {args.get('api_base')}")
             response = await litellm.acompletion(**args)
             self.logger.debug(f"[LLMClient] achat 返回: {response}")
             return response
