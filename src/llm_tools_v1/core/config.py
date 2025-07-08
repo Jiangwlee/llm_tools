@@ -35,10 +35,7 @@ class Settings(BaseSettings):
     llm_current: str = Field("doubao", validation_alias="LLM_CURRENT")  # 当前激活模型
 
     # 目录路径
-    data_dir: Path = Field("data", validation_alias="DATA_DIR")
-    log_dir: Path = Field("data/logs", validation_alias="LOG_DIR")
-    db_dir: Path = Field("data/db", validation_alias="DB_DIR")
-    cache_dir: Path = Field("data/cache", validation_alias="CACHE_DIR")
+    llm_tools_home: Path = Field(os.path.expanduser("~/.llm_tools"), validation_alias="LLM_TOOLS_HOME")
 
     # 其他配置
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")
@@ -46,13 +43,20 @@ class Settings(BaseSettings):
 
     # 数据库配置
     db_type: str = Field("sqlite", validation_alias="DB_TYPE")
-    db_async_url: str = Field("sqlite+aiosqlite:///data/db/llm_tools.db", validation_alias="DB_ASYNC_URL")
+    db_async_url: str | None = Field(None, validation_alias="DB_ASYNC_URL")
     db_echo: bool = Field(False, validation_alias="DB_ECHO")
 
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8"
     )
+
+    def model_post_init(self, __context):
+        if not self.db_async_url:
+            os.makedirs(self.llm_tools_home / "data" / "db", exist_ok=True)
+            db_path = self.llm_tools_home / "data" / "db" / "llm_tools.db"
+            self.db_async_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -76,3 +80,39 @@ def set_current_llm(model_name: str):
     """
     os.environ["LLM_CURRENT"] = model_name
     get_settings.cache_clear() 
+
+class LlmToolsDirs:
+    @staticmethod
+    def get_llm_tools_home() -> Path:
+        path = get_settings().llm_tools_home
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    @staticmethod
+    def get_data_dir() -> Path:
+        path = LlmToolsDirs.get_llm_tools_home() / "data"
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    @staticmethod
+    def get_log_dir() -> Path:
+        path = LlmToolsDirs.get_data_dir() / "logs"
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    @staticmethod
+    def get_db_dir() -> Path:
+        path = LlmToolsDirs.get_data_dir() / "db"
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    @staticmethod
+    def get_cache_dir() -> Path:
+        path = LlmToolsDirs.get_data_dir() / "cache"
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+        return path

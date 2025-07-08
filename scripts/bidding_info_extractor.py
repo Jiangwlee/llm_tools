@@ -149,8 +149,9 @@ async def save_bid_award_price(bid_award_price_data_raw: Dict[str, Any], url: st
 # ========== 参数解析 ==========
 def parse_args():
     parser = argparse.ArgumentParser(description="自动爬取并入库招标/中标公告信息，支持断点续跑和失败记录")
-    parser.add_argument("--keyword", type=str, default="广州供电局", help="检索关键词")
-    parser.add_argument("--max_page", type=int, default=3, help="最大爬取页数")
+    parser.add_argument("--keyword", type=str, default="", help="检索关键词")
+    parser.add_argument("--max_page", type=int, default=65535, help="最大爬取页数")
+    parser.add_argument("--end_date", type=str, default=None, help="结束日期，格式为YYYY-MM-DD，比如：2025-07-06")
     parser.add_argument("--test_url", type=str, default=None, help="测试模式，指定单个公告URL")
     parser.add_argument("--concurrency", type=int, default=5, help="并发处理数")
     parser.add_argument("--type", type=str, default="all", choices=["all", "bidding", "award"], help="公告类型")
@@ -163,9 +164,9 @@ class BiddingInfoExtractor:
         self.processed_urls: Set[str] = load_json_set(PROCESSED_URLS_FILE)
         self.failed_urls: Dict[str, Any] = load_json_dict(FAILED_URLS_FILE)
 
-    async def fetch_list(self, keyword: str, max_page: int) -> List[BiddingListItem]:
+    async def fetch_list(self, keyword: str, max_page: int, end_date: Optional[str] = None) -> List[BiddingListItem]:
         crawler = BiddingCsgCrawler()
-        return await crawler.asearch(keyword, max_page=max_page)
+        return await crawler.asearch(keyword, max_page=max_page, end_date=end_date)
 
     async def fetch_html(self, url: str) -> BiddingPageDetail:
         crawler = BiddingCsgCrawler()
@@ -235,10 +236,11 @@ async def main():
         logger.debug(html_content[:500])  # 仅打印前500字符做示例
         return
 
-    logger.debug(args.keyword)
-    logger.debug(args.max_page)
-    logger.debug(args.type)
-    bidding_list = await extractor.fetch_list(args.keyword, args.max_page)
+    logger.info(f"检索关键词: {args.keyword}")
+    logger.info(f"最大页数: {args.max_page}")
+    logger.info(f"公告类型: {args.type}")
+    logger.info(f"结束日期: {args.end_date}")
+    bidding_list = await extractor.fetch_list(args.keyword, args.max_page, args.end_date)
     logger.info(f"共获取到 {len(bidding_list)} 条公告")
     logger.info(f"已处理的url: {extractor.processed_urls}")
     # 跳过已处理的 url

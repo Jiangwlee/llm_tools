@@ -8,5 +8,6 @@ playwright>=1.49.1
 uvicorn>=0.34.0
 websockets>=14.1
 requests>=2.32.3
-playwright>=1.49.1
-frozenlist==1.6.0
+playwright
+frozenlist
+pydantic-settings

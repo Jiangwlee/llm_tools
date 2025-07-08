@@ -2,6 +2,7 @@ from typing import Optional
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func
 from sqlmodel import select
 from src.llm_tools_v1.db.models import Bidding, BiddingPackage
 
@@ -70,6 +71,19 @@ class BiddingService:
         await db.delete(bidding)
         await db.commit()
         return True
+    
+    @staticmethod
+    async def get_bidding_by_date(date: str, db: AsyncSession) -> list[Bidding]:
+        """
+        根据日期获取招标公告
+        :param date: 日期（YYYY-MM-DD）
+        :param db: 异步数据库会话
+        :return: 招标公告列表
+        """
+        result = await db.execute(
+            select(Bidding).where(func.date(Bidding.created_at) == date)
+        )
+        return result.scalars().all()
 
 class BiddingPackageService:
     """
@@ -125,3 +139,14 @@ class BiddingPackageService:
             packages.append(package)
         await db.flush()  # 确保主键 id 可用
         return packages 
+    
+    @staticmethod
+    async def get_bidding_package_by_bidding_id(bidding_id: int, db: AsyncSession) -> list[BiddingPackage]:
+        """
+        根据招标公告 ID 获取标包列表
+        :param bidding_id: 招标公告主键
+        :param db: 异步数据库会话
+        :return: 标包列表
+        """
+        result = await db.execute(select(BiddingPackage).where(BiddingPackage.bidding_id == bidding_id))
+        return result.scalars().all()

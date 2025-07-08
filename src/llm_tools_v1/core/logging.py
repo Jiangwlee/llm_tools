@@ -1,15 +1,15 @@
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+from llm_tools_v1.core.config import LlmToolsDirs
 from llm_tools_v1.core.config import get_settings
 
 def setup_logging(logging_level: str = "WARNING"):
     """
     初始化日志配置，支持文件轮转和控制台输出，参数从 config 读取。
     """
-    settings = get_settings()
-    log_dir = settings.log_dir
-    log_level = logging_level.upper() if logging_level else settings.log_level.upper()
+    log_dir = LlmToolsDirs.get_log_dir()
+    log_level = logging_level.upper() if logging_level else get_settings().log_level.upper()
     log_file = Path(log_dir) / "app.log"
     Path(log_dir).mkdir(parents=True, exist_ok=True)
 

@@ -35,7 +35,7 @@ class BiddingCsgCrawler:
     """
     南方电网招标公告爬虫，支持同步和异步页面爬取。
     """
-    SEARCH_URL = "https://www.bidding.csg.cn/dbsearch.jspx?q="
+    SEARCH_URL = "https://www.bidding.csg.cn/dbsearch.jspx?channelId=309&q="
     LIST_SELECTOR = "div.List2"
     NEXT_PAGE_SELECTOR = "text=下一页"
     PAGE_INFO_PATTERN = r"共(\d+)条记录\s+(\d+)/(\d+)页"
@@ -191,6 +191,9 @@ class BiddingCsgCrawler:
                     create_date = item.find('span', class_='Black14 Gray')
                     logger.info(f"日期: {create_date.text if create_date else ''}")
                     if create_date and create_date.text and self.end_date and create_date.text < self.end_date:
+                        logger.info(f"日期小于结束日期，停止爬取: {create_date.text}")
+                        logger.info(f"结束日期: {self.end_date}")
+                        logger.info(f"当前日期: {create_date.text}")
                         self.stop_crawl = True
                     else:
                         self.bidding_list.append({
@@ -286,10 +289,11 @@ class BiddingCsgCrawler:
 
 if __name__ == "__main__":
     crawler = BiddingCsgCrawler()
-    result = crawler.search("广州供电局", max_page=3)
-    # for item in result:
-    #     print(item)
+    result = crawler.search("招标", max_page=3, end_date="2025-07-06")
+    for item in result:
+        print(crawler.read_bidding_page(item["url"]))
+        print("--------------------------------")
 
-    print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml"))
-    print("--------------------------------")
-    print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbgg/1200396362.jhtml"))
+    # print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbhxrgs/1200395227.jhtml"))
+    # print("--------------------------------")
+    # print(crawler.read_bidding_page("https://www.bidding.csg.cn/zbgg/1200396362.jhtml"))

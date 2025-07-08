@@ -1,2 +1,1 @@
-0 * * * * export PYTHONPATH=${PYTHONPATH}:/app/src/ && /usr/local/bin/python /app/src/llm_tools/crawlers/bidding_notification.py >> /var/log/llm_tools/bidding_notification.log 2>&1
-0 * * * * export PYTHONPATH=${PYTHONPATH}:/app/src/ && /usr/local/bin/python /app/src/llm_tools/crawlers/tgb.py >> /var/log/llm_tools/tgb.log 2>&1
+0 * * * * export PYTHONPATH=${PYTHONPATH}:/app/src/ && /usr/local/bin/python /app/src/scripts/daily_task.py >> /var/log/llm_tools/daily_task.log 2>&1
