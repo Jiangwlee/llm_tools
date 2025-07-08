@@ -1,5 +1,5 @@
 from src.llm_tools_v1.ai.llm_parser import aextract_bidding_judge
-from .bidding_info_extractor import BiddingInfoExtractor
+from bidding_info_extractor import BiddingInfoExtractor
 import os
 import asyncio
 import argparse
@@ -75,7 +75,7 @@ async def summarize_bidding_info(date: str):
 # ========== 参数解析 ==========
 def parse_args():
     parser = argparse.ArgumentParser(description="每日定期任务")
-    parser.add_argument("--task", type=str, default="summarize_bidding_info", help="任务名称")
+    parser.add_argument("--task", type=str, default="all", help="任务名称")
     parser.add_argument("--date", type=str, default=None, help="日期")
     return parser.parse_args()
 
@@ -92,10 +92,13 @@ if __name__ == "__main__":
     
     args = parse_args()
     if args.task == "extract_bidding_info":
-        print("开始提取招标信息")
+        logger.info("开始提取招标信息")
         asyncio.run(extract_bidding_info(args.date or yesterday_date()))
     elif args.task == "summarize_bidding_info":
-        print("开始总结招标信息")
+        logger.info("开始总结招标信息")
         asyncio.run(summarize_bidding_info(args.date or today_date()))
     else:
-        print(f"任务名称错误: {args.task}")
+        logger.info("开始提取招标信息")
+        asyncio.run(extract_bidding_info(args.date or today_date()))
+        logger.info("开始总结招标信息")
+        asyncio.run(summarize_bidding_info(args.date or today_date()))

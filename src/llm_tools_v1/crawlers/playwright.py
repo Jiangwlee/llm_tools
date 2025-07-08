@@ -1,3 +1,13 @@
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
+import re
+import json
+import random
+import time
+from llm_tools_v1.core.logging import get_logger
+
+logger = get_logger()
+
 class BiddingCSG:
     """
     不要使用 requests, 目标网站有爬虫检测, 简单爬虫容易被检测到, 导致封 IP.
@@ -31,7 +41,7 @@ class BiddingCSG:
         """
         self.stop_crawl = False
         self.end_date = end_date
-        start_url = f"https://www.bidding.csg.cn/dbsearch.jspx?q=" if query_url is None else query_url
+        start_url = "https://www.bidding.csg.cn/dbsearch.jspx?q=" if query_url is None else query_url
         self.page.goto(start_url, wait_until='load')
 
         # 填入搜索关键字

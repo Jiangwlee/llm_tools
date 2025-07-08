@@ -1,10 +1,14 @@
-from typing import Any, Dict, Optional
-from llm_tools_v1.core.llm_service import LLMResult, chat, achat
-from llm_tools_v1.core.config import get_settings
-from llm_tools_v1.core.llm import LLMClient
-from llm_tools_v1.ai.prompt_templates import SYS_BIDDING_INFO_PROMPT, SYS_BIDDING_PRICE_PROMPT, SYS_BIDDING_JUDGE_PROMPT
-from llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
 import asyncio
+from typing import Optional
+
+from llm_tools_v1.ai.prompt_templates import (
+    SYS_BIDDING_INFO_PROMPT,
+    SYS_BIDDING_JUDGE_PROMPT,
+    SYS_BIDDING_PRICE_PROMPT,
+)
+from llm_tools_v1.core.llm import LLMClient
+from llm_tools_v1.core.llm_service import LLMResult, achat, chat
+
 
 def build_bidding_info_prompt(html_content: str) -> str:
     """
@@ -116,7 +120,10 @@ if __name__ == "__main__":
     
     async def main():
         from llm_tools_v1.db.async_session import get_async_session
-        from llm_tools_v1.services.bidding_service import BiddingService, BiddingPackageService
+        from llm_tools_v1.services.bidding_service import (
+            BiddingPackageService,
+            BiddingService,
+        )
         async with get_async_session() as session:
             bidding_list = await BiddingService.get_bidding_by_date("2025-07-07", session)
             tasks = []

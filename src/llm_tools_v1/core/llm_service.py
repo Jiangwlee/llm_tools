@@ -1,7 +1,7 @@
 from typing import Optional
 from dataclasses import dataclass
-from .llm import LLMClient
-from .logging import get_logger
+from llm_tools_v1.core.llm import LLMClient
+from llm_tools_v1.core.logging import get_logger
 
 logger = get_logger()
 

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, delete
-from src.llm_tools_v1.db.models import BidAwardPrice, Bidding, BiddingPackage
+from llm_tools_v1.db.models import BidAwardPrice, Bidding, BiddingPackage
 from sqlalchemy import join
 
 class BidAwardPriceCreate(BaseModel):

@@ -3,7 +3,7 @@
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
-from .async_engine import get_async_engine
+from llm_tools_v1.db.async_engine import get_async_engine
 
 @asynccontextmanager
 async def get_async_session():

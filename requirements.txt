@@ -11,3 +11,7 @@ requests>=2.32.3
 playwright
 frozenlist
 pydantic-settings
+litellm
+sqlalchemy
+sqlmodel
+aiosqlite

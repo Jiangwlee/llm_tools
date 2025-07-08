@@ -17,13 +17,13 @@ LLM_DICT = {
     # doubao 目前 liteLLM 官方未直接支持，保留配置但不推荐直接调用
     "doubao": LLMModelConfig(
         api_url="https://ark.cn-beijing.volces.com/api/v3/",
-        api_key=os.getenv("DOUBAO_API_KEY", None),
+        api_key=os.getenv("DOUBAO_API_KEY", ""),
         model="openai/doubao-1.5-pro-32k-250115",  # 暂不支持 provider/model 格式
         max_tokens=16384
     ),
     "deepseek": LLMModelConfig(
         api_url="https://api.deepseek.com",
-        api_key=os.getenv("DEEPSEEK_API_KEY", None),
+        api_key=os.getenv("DEEPSEEK_API_KEY", ""),
         model="deepseek/deepseek-chat",  # 推荐 provider/model 格式
         max_tokens=4096
     )

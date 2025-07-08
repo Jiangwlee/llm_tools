@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
 from sqlmodel import select
-from src.llm_tools_v1.db.models import Bidding, BiddingPackage
+from llm_tools_v1.db.models import Bidding, BiddingPackage
 
 class BiddingCreate(BaseModel):
     """

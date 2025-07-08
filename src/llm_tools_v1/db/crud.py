@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any
 from sqlmodel import Session, select
 from datetime import datetime, timezone
-from .models import Bidding, BiddingPackage
+from llm_tools_v1.db.models import Bidding, BiddingPackage
 
 # 创建招标公告
 # 如果已存在相同 bidding_no，抛出异常
