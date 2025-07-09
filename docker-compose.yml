@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  llm-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_tools_v1
+    ports:
+      - "8000:8000"
+    environment:
+      # LLM API 密钥
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DOUBAO_API_KEY=${DOUBAO_API_KEY}
+      # 时区设置
+      - TZ=Asia/Shanghai
+      # 数据库配置（使用 SQLite）
+      - DB_TYPE=sqlite
+      - DB_ECHO=false
+      # 日志级别
+      - LOG_LEVEL=INFO
+      # 环境设置
+      - ENV=production
+      # 当前使用的 LLM 模型
+      - LLM_CURRENT=doubao
+    volumes:
+      # 数据持久化
+      - ./data:/root/.llm_tools/data
+      # 日志持久化
+      - ./logs:/var/log/llm_tools
+      # 配置文件（可选）
+      - ./config:/root/.llm_tools/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - llm-tools-network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  llm-tools-network:
+    driver: bridge
