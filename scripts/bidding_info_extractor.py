@@ -10,11 +10,12 @@ from llm_tools_v1.utils.llm_mapping import map_llm_bidding_to_schema, map_llm_pa
 from llm_tools_v1.services.bidding_service import BiddingService, BiddingPackageService, BiddingCreate, BiddingPackageCreate
 from llm_tools_v1.services.bid_award_price_service import BidAwardPriceService, BidAwardPriceCreate
 from llm_tools_v1.core.logging import get_logger, setup_logging
+from llm_tools_v1.core.config import LlmToolsDirs
 
 logger = get_logger()
 
-FAILED_URLS_FILE = "data/cache/failed_urls.json"
-PROCESSED_URLS_FILE = "data/cache/processed_urls.json"
+FAILED_URLS_FILE = LlmToolsDirs.get_cache_dir() / "failed_urls.json"
+PROCESSED_URLS_FILE = LlmToolsDirs.get_cache_dir() / "processed_urls.json"
 
 # ========== 工具函数 ==========
 def load_json_set(filename: str) -> Set[str]:

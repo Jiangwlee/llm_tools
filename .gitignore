@@ -12,3 +12,5 @@ __pycache__/
 uv.lock
 data/
 run.sh
+*.rest
+*.http
