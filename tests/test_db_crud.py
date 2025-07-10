@@ -1,8 +1,8 @@
 import pytest
 from sqlmodel import SQLModel, Session, create_engine
 from datetime import datetime
-from src.llm_tools_v1.db.models import Bidding, BiddingPackage
-from src.llm_tools_v1.db.crud import (
+from llm_tools_v1.db.models import Bidding, BiddingPackage
+from llm_tools_v1.db.crud import (
     create_bidding, get_bidding_by_no, update_bidding, delete_bidding,
     create_bidding_package, get_packages_by_bidding_id,
     update_bidding_package, delete_bidding_package

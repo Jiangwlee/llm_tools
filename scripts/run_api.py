@@ -13,7 +13,7 @@ def main():
     args = parser.parse_args()
 
     uvicorn.run(
-        "src.llm_tools_v1.main:app",
+        "llm_tools_v1.main:app",
         host=args.host,
         port=args.port,
         reload=args.reload,

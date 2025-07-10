@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from src.llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
+from llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
 
 # 可用真实页面或 mock URL，推荐用官方公开页面
 TEST_URL = "https://www.bidding.csg.cn/zbgg/1200395704.jhtml"

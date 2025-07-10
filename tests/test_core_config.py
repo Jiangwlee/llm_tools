@@ -1,4 +1,4 @@
-from src.llm_tools_v1.core.config import get_settings, get_current_llm_config, LLMModelConfig
+from llm_tools_v1.core.config import get_settings, get_current_llm_config, LLMModelConfig
 
 
 def test_default_llm_config():
@@ -29,7 +29,7 @@ def test_env_override(monkeypatch):
     monkeypatch.setenv("LLM_CURRENT", "doubao")
     # 重新加载配置
     from importlib import reload
-    import src.llm_tools_v1.core.config as config_mod
+    import llm_tools_v1.core.config as config_mod
     reload(config_mod)
     settings = config_mod.get_settings()
     doubao = settings.llm_models["doubao"]

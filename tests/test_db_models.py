@@ -2,7 +2,7 @@ import pytest
 from sqlmodel import SQLModel, Session, create_engine, select
 from datetime import datetime, timezone
 from sqlalchemy import text
-from src.llm_tools_v1.db.models import Bidding, BiddingPackage
+from llm_tools_v1.db.models import Bidding, BiddingPackage
 
 # 使用内存数据库进行测试，并启用外键约束
 @pytest.fixture(name="session")

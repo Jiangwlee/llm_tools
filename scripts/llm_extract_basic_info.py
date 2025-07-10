@@ -5,15 +5,15 @@ import asyncio
 import json
 import logging
 from typing import Any, Dict, Optional, List
-from src.llm_tools_v1.core.config import set_current_llm
-from src.llm_tools_v1.core.logging import setup_logging
-from src.llm_tools_v1.ai.llm_parser import aextract_bidding_info
-from src.llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
-from src.llm_tools_v1.db.async_session import get_async_session
-from src.llm_tools_v1.services.bidding_service import BiddingService, BiddingCreate
-from src.llm_tools_v1.db.models import Bidding, BiddingPackage
+from llm_tools_v1.core.config import set_current_llm
+from llm_tools_v1.core.logging import setup_logging
+from llm_tools_v1.ai.llm_parser import aextract_bidding_info
+from llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
+from llm_tools_v1.db.async_session import get_async_session
+from llm_tools_v1.services.bidding_service import BiddingService, BiddingCreate
+from llm_tools_v1.db.models import Bidding, BiddingPackage
 from sqlmodel import select
-from src.llm_tools_v1.utils.llm_mapping import map_llm_bidding_to_schema, map_llm_package_to_schema
+from llm_tools_v1.utils.llm_mapping import map_llm_bidding_to_schema, map_llm_package_to_schema
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
@@ -104,7 +104,7 @@ class BiddingExtractor:
                 # 标包信息批量插入
                 packages = bidding_data_raw.get("标包信息")
                 if packages and isinstance(packages, list):
-                    from src.llm_tools_v1.services.bidding_service import BiddingPackageService, BiddingPackageCreate
+                    from llm_tools_v1.services.bidding_service import BiddingPackageService, BiddingPackageCreate
                     pkg_creates = [
                         BiddingPackageCreate(**{**map_llm_package_to_schema(pkg), "bidding_id": bidding.id})
                         for pkg in packages

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from src.llm_tools_v1.core.llm import LLMClient
+from llm_tools_v1.core.llm import LLMClient
 
 messages = [
     {"role": "user", "content": "你好"}

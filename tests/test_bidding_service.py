@@ -4,10 +4,10 @@ import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
-from src.llm_tools_v1.services.bidding_service import (
+from llm_tools_v1.services.bidding_service import (
     BiddingService, BiddingPackageService, BiddingCreate, BiddingPackageCreate
 )
-from src.llm_tools_v1.db.models import Bidding, BiddingPackage
+from llm_tools_v1.db.models import Bidding, BiddingPackage
 
 # 使用内存数据库，所有 session 复用同一个 engine
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"

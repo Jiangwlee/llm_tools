@@ -1,4 +1,4 @@
-from src.llm_tools_v1.ai.llm_parser import aextract_bidding_judge
+from llm_tools_v1.ai.llm_parser import aextract_bidding_judge
 from bidding_info_extractor import BiddingInfoExtractor
 import os
 import asyncio

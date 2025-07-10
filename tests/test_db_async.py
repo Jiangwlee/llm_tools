@@ -3,9 +3,9 @@ import pytest
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from src.llm_tools_v1.core.config import get_settings, Settings
-from src.llm_tools_v1.db.async_engine import get_async_engine
-from src.llm_tools_v1.db.async_session import get_async_session
+from llm_tools_v1.core.config import get_settings, Settings
+from llm_tools_v1.db.async_engine import get_async_engine
+from llm_tools_v1.db.async_session import get_async_session
 
 @pytest.fixture(autouse=True)
 def clear_settings_cache():

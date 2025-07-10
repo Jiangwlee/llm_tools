@@ -2,8 +2,8 @@ import os
 import logging
 from pathlib import Path
 import importlib
-from src.llm_tools_v1.core.logging import setup_logging, get_logger
-from src.llm_tools_v1.core import config as config_mod
+from llm_tools_v1.core.logging import setup_logging, get_logger
+from llm_tools_v1.core import config as config_mod
 
 def test_setup_logging(tmp_path, monkeypatch):
     # 设置环境变量，确保 config 读取到临时目录

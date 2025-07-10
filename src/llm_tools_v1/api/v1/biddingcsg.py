@@ -5,9 +5,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
-from src.llm_tools_v1.core.config import LlmToolsDirs
-from src.llm_tools_v1.core.logging import get_logger
-from src.llm_tools_v1.services.biddingcsg_service import (
+from llm_tools_v1.core.config import LlmToolsDirs
+from llm_tools_v1.core.logging import get_logger
+from llm_tools_v1.services.biddingcsg_service import (
     BiddingCSGService,
     BiddingSearchParams,
     BiddingSearchResponse,

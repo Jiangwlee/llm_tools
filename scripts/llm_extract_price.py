@@ -3,10 +3,10 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 
 import argparse
-from src.llm_tools_v1.core.config import set_current_llm
-from src.llm_tools_v1.core.logging import setup_logging
-from src.llm_tools_v1.ai.llm_parser import extract_bidding_price
-from src.llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
+from llm_tools_v1.core.config import set_current_llm
+from llm_tools_v1.core.logging import setup_logging
+from llm_tools_v1.ai.llm_parser import extract_bidding_price
+from llm_tools_v1.crawlers.biddingcsg import BiddingCsgCrawler
 
 # https://www.bidding.csg.cn/zbhxrgs/1200396266.jhtml (投标费率测试 url)
 def main():

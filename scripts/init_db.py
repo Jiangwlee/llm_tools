@@ -4,8 +4,8 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 
-from src.llm_tools_v1.db.async_engine import get_async_engine
-from src.llm_tools_v1.db.models import SQLModel
+from llm_tools_v1.db.async_engine import get_async_engine
+from llm_tools_v1.db.models import SQLModel
 
 async def init_db():
     """

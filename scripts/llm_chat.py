@@ -4,9 +4,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../"
 
 import argparse
 import os
-from src.llm_tools_v1.core.llm import LLMClient
-from src.llm_tools_v1.core.config import get_settings, set_current_llm
-from src.llm_tools_v1.core.logging import setup_logging
+from llm_tools_v1.core.llm import LLMClient
+from llm_tools_v1.core.config import get_settings, set_current_llm
+from llm_tools_v1.core.logging import setup_logging
 
 def main():
     parser = argparse.ArgumentParser(description="大模型命令行对话工具")
