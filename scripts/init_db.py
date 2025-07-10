@@ -15,7 +15,7 @@ async def init_db():
     DB_PATH = LlmToolsDirs.get_db_dir()
     if not os.path.exists(DB_PATH):
         os.makedirs(DB_PATH, exist_ok=True)
-    if not os.path.exists(DB_PATH + "/llm_tools.db"):
+    if not os.path.exists(DB_PATH.joinpath("llm_tools.db")):
         engine = get_async_engine()
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
