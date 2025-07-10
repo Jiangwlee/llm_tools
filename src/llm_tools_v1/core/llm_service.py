@@ -28,8 +28,10 @@ def chat(system_prompt: str, llm_client: Optional[LLMClient] = None) -> LLMResul
         resp = llm_client.chat(messages, temperature=0.1)
         content = resp.get("choices", [{}])[0].get("message", {}).get("content")
         if content:
+            logger.info(f"大模型返回内容: {content}")
             return LLMResult(content=content, success=True)
         else:
+            logger.warning("大模型未返回内容")
             return LLMResult(content=None, success=False, error="模型未返回内容")
     except (KeyError, TypeError) as ex:
         logger.warning(f"chat 返回格式异常: {ex}")
@@ -55,8 +57,10 @@ async def achat(system_prompt: str, llm_client: Optional[LLMClient] = None) -> L
         resp = await llm_client.achat(messages, temperature=0.1)
         content = resp.get("choices", [{}])[0].get("message", {}).get("content")
         if content:
+            logger.info(f"大模型返回内容: {content}")
             return LLMResult(content=content, success=True)
         else:
+            logger.warning("大模型未返回内容")
             return LLMResult(content=None, success=False, error="模型未返回内容")
     except (KeyError, TypeError) as ex:
         logger.warning(f"achat 返回格式异常: {ex}")
