@@ -91,7 +91,7 @@ RUN cp llm_tools_cron /etc/cron.d/llm_tools_cron && \
     crontab /etc/cron.d/llm_tools_cron
 
 # 初始化数据库表结构（确保表已创建）
-RUN /usr/local/bin/python /app/scripts/init_db.py
-
+RUN chmod +x /app/scripts/entrypoint.sh
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
 # 启动命令
 CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
