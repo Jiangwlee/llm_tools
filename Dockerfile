@@ -77,7 +77,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
 # 设置环境变量
-ENV PYTHONPATH ${PYTHONPATH}:/app/src
+ENV PYTHONPATH /app/src:/app/scripts
 
 # 复制应用代码
 COPY . .

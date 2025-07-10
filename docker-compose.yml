@@ -27,9 +27,7 @@ services:
       # 数据持久化
       - ./data:/root/.llm_tools/data
       # 日志持久化
-      - ./logs:/var/log/llm_tools
-      # 配置文件（可选）
-      - ./config:/root/.llm_tools/config
+      - ./data/logs:/var/log/llm_tools
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -47,3 +45,4 @@ volumes:
 networks:
   llm-tools-network:
     driver: bridge
+
