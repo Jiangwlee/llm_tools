@@ -4,7 +4,7 @@ from pathlib import Path
 from llm_tools_v1.core.config import LlmToolsDirs
 from llm_tools_v1.core.config import get_settings
 
-def setup_logging(logging_level: str = "WARNING"):
+def setup_logging(logging_level: str = "INFO"):
     """
     初始化日志配置，支持文件轮转和控制台输出，参数从 config 读取。
     """
@@ -30,7 +30,7 @@ def setup_logging(logging_level: str = "WARNING"):
     console_handler.setFormatter(logging.Formatter(fmt, datefmt))
 
     logger = logging.getLogger()
-    logger.setLevel(getattr(logging, log_level, logging.WARNING))
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
     logger.handlers.clear()
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
