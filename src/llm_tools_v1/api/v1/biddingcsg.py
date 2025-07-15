@@ -13,6 +13,7 @@ from llm_tools_v1.services.biddingcsg_service import (
     BiddingSearchResponse,
     BiddingUrl,
 )
+from llm_tools_v1.api.v1.schema import ResponseBase, SuccessResponse
 
 logger = get_logger()
 
@@ -66,7 +67,7 @@ async def get_bidding_summary(
     fallback_to_latest: bool = Query(
         True, description="如果指定日期的总结不存在，是否返回最新的总结"
     ),
-) -> str:
+) -> ResponseBase:
     """
     获取指定日期的标讯总结
 
@@ -91,7 +92,10 @@ async def get_bidding_summary(
             with open(summary_file, "r", encoding="utf-8") as f:
                 content = f.read()
             logger.info(f"成功获取 {date} 的标讯总结")
-            return content
+            return SuccessResponse(data={
+                "markdown": content,
+                "date": date,
+            })
         except Exception as e:
             logger.error(f"读取标讯总结文件失败: {e}")
             raise HTTPException(status_code=500, detail="读取标讯总结文件失败")
@@ -106,7 +110,10 @@ async def get_bidding_summary(
                 # 从文件名提取日期
                 file_date = latest_file.stem.replace("bidding_info_", "")
                 logger.info(f"指定日期 {date} 的总结不存在，返回最新总结 {file_date}")
-                return f"# 标讯总结（{file_date}）\n\n> 注意：您请求的日期 {date} 的总结不存在，以下是 {file_date} 的最新总结\n\n{content}"
+                return SuccessResponse(data={
+                    "markdown": content,
+                    "date": file_date,
+                })
             except Exception as e:
                 logger.error(f"读取最新标讯总结文件失败: {e}")
                 raise HTTPException(status_code=500, detail="读取最新标讯总结文件失败")
@@ -132,7 +139,7 @@ async def get_bidding_summary(
         404: {"description": "没有找到任何标讯总结文件"},
     },
 )
-async def get_latest_bidding_summary() -> str:
+async def get_latest_bidding_summary() -> ResponseBase:
     """
     获取最新的标讯总结
 
@@ -149,7 +156,10 @@ async def get_latest_bidding_summary() -> str:
         # 从文件名提取日期
         file_date = latest_file.stem.replace("bidding_info_", "")
         logger.info(f"成功获取最新标讯总结 {file_date}")
-        return content
+        return SuccessResponse(data={
+            "markdown": content,
+            "date": file_date,
+        })
     except Exception as e:
         logger.error(f"读取最新标讯总结文件失败: {e}")
         raise HTTPException(status_code=500, detail="读取标讯总结文件失败")
