@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: llm_tools_v1
     ports:
-      - "8000:8000"
+      - "10001:8000"
     environment:
       # LLM API 密钥
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}

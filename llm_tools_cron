@@ -1,1 +1,5 @@
-0 * * * * export PYTHONPATH=${PYTHONPATH}:/app/src/:/app/scripts/ && /usr/local/bin/python /app/scripts/daily_task.py >> /var/log/llm_tools/daily_task.log 2>&1
+PYTHONPATH=/app/src:/app/scripts
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+DOUBAO_API_KEY=YOUR_DOUBAO_API_KEY
+
+10 * * * * export PYTHONPATH=/app/src/:/app/scripts/ && /usr/local/bin/python /app/scripts/daily_task.py >> /var/log/llm_tools/daily_task.log 2>&1
