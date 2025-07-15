@@ -50,16 +50,25 @@ def get_summary_by_date(date: str) -> Optional[Path]:
 @router.get(
     "/{date}",
     summary="获取指定日期的标讯总结",
-    response_class=PlainTextResponse,
+    response_model=ResponseBase,
     response_description="返回指定日期的标讯总结内容",
     responses={
         200: {
-            "description": "成功返回标讯总结内容",
+            "description": "成功返回最新标讯总结内容",
             "content": {
-                "text/plain": {"example": "# 标讯总结\n\n## 项目1\n招标编号：XXX\n..."}
+                "application/json": {
+                    "example": {
+                        "code": 200,
+                        "message": "success",
+                        "data": {
+                            "markdown": "# 标讯总结\n\n## 项目1\n招标编号：XXX\n...",
+                            "date": "2024-01-15"
+                        }
+                    }
+                }
             },
         },
-        404: {"description": "指定日期的标讯总结不存在"},
+        404: {"description": "没有找到任何标讯总结文件"},
     },
 )
 async def get_bidding_summary(
@@ -127,13 +136,22 @@ async def get_bidding_summary(
 @router.get(
     "/",
     summary="获取最新的标讯总结",
-    response_class=PlainTextResponse,
+    response_model=ResponseBase,
     response_description="返回最新的标讯总结内容",
     responses={
         200: {
             "description": "成功返回最新标讯总结内容",
             "content": {
-                "text/plain": {"example": "# 标讯总结\n\n## 项目1\n招标编号：XXX\n..."}
+                "application/json": {
+                    "example": {
+                        "code": 200,
+                        "message": "success",
+                        "data": {
+                            "markdown": "# 标讯总结\n\n## 项目1\n招标编号：XXX\n...",
+                            "date": "2024-01-15"
+                        }
+                    }
+                }
             },
         },
         404: {"description": "没有找到任何标讯总结文件"},
