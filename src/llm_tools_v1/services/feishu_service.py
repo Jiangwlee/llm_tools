@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 # Our official coze sdk for Python [cozepy](https://github.com/coze-dev/coze-py)
 from cozepy import COZE_CN_BASE_URL
 from pydantic import BaseModel
@@ -38,12 +39,14 @@ class WeeklyTargetRecord(RecordBase):
     week: str
     state: str
     progress: str
+    parent: str
 
 class TaskRecord(RecordBase):
     name: str
     state: str
     estimate_time: float
     progress: float
+    parent: str
 
 
 class OwnerTaskData(BaseModel):
@@ -63,7 +66,7 @@ class WorkStateAnalyzer:
         work_states = self.get_work_state()
         self.build_record_map(work_states)
         self.build_owner_task_data()
-        print(self.owner_task_data_map)
+        print(self.to_markdown())
 
     def get_work_state(self) -> list[WorkState]:
         try:
@@ -134,6 +137,85 @@ class WorkStateAnalyzer:
                     elif isinstance(record, WeeklyTargetRecord):
                         owner_task_data.weekly_target.append(record)
 
+    def to_markdown(self):
+        markdown = ""
+        for owner, owner_task_data in self.owner_task_data_map.items():
+            # print(owner_task_data)
+            markdown += f"## {owner} 的工作日报 - {datetime.now().strftime('%Y-%m-%d')}\n\n"
+            markdown += self._get_monthly_target_markdown(owner_task_data)
+            markdown += self._get_weekly_target_markdown(owner_task_data)
+            markdown += self._get_task_list_markdown(owner_task_data)
+        return markdown
+    
+    def _get_weekly_target_markdown(self, owner_task_data: OwnerTaskData) -> str:
+        markdown = ""
+        markdown += f"### 周目标\n\n"
+        if owner_task_data.weekly_target:
+            headers = [field for field in owner_task_data.weekly_target[0].model_dump().keys()]
+            markdown += "| " + " | ".join(headers) + " |\n"
+            markdown += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+            for weekly_target in owner_task_data.weekly_target:
+                values = [self._get_attribute_value(weekly_target, field) for field in headers]
+                markdown += "| " + " | ".join(values) + " |\n"
+        markdown += "\n\n"
+        return markdown
+    
+    def _get_task_list_markdown(self, owner_task_data: OwnerTaskData) -> str:
+        markdown = ""
+        markdown += f"### 每周任务列表\n\n"
+        if owner_task_data.task_list:
+            headers = [field for field in owner_task_data.task_list[0].model_dump().keys()]
+            markdown += "| " + " | ".join(headers) + " |\n"
+            markdown += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+            for task_record in owner_task_data.task_list:
+                values = [self._get_attribute_value(task_record, field) for field in headers]
+                markdown += "| " + " | ".join(values) + " |\n"
+        markdown += "\n"
+        return markdown
+    
+    def _get_monthly_target_markdown(self, owner_task_data: OwnerTaskData) -> str:
+        markdown = ""
+        markdown += f"### 月度目标\n\n"
+        # 输出表头
+        if owner_task_data.monthly_target:
+            headers = [field for field in owner_task_data.monthly_target[0].model_dump().keys()]
+            markdown += "| " + " | ".join(headers) + " |\n"
+            markdown += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+            # 输出每一行
+            for monthly_target in owner_task_data.monthly_target:
+                values = [self._get_attribute_value(monthly_target, field) for field in headers]
+                markdown += "| " + " | ".join(values) + " |\n"
+        else:
+            markdown += "无月度目标\n\n"
+        markdown += "\n\n"
+        return markdown
+    
+    def _get_attribute_value(self, record: RecordBase, field: str) -> str:
+        if record.model_dump().get(field, None):
+            attr = record.model_dump().get(field, "")
+            if field in ["owner", "parent"]:
+                first_attr = attr[0] if isinstance(attr, list) else attr
+                object = self.record_map.get(first_attr, {})
+                # print(f"{attr} : {first_attr} : {object}")
+
+
+                if isinstance(object, FeishuUser):
+                    return object.name
+                elif isinstance(object, ContactRecord):
+                    return object.user.name
+                elif isinstance(object, TaskRecord):
+                    return object.name
+                elif isinstance(object, MonthlyTargetRecord):
+                    return object.target
+                elif isinstance(object, WeeklyTargetRecord):
+                    return object.target
+                else:
+                    return str(object.model_dump().get("name", ""))
+            else:
+                return str(attr)
+        else:
+            return ""
+
 def to_monthly_target_record(fields: dict) -> MonthlyTargetRecord:
     # print(fields)
     return MonthlyTargetRecord(
@@ -150,16 +232,18 @@ def to_weekly_target_record(fields: dict) -> WeeklyTargetRecord:
         owner=fields.get("负责人", "").get('link_record_ids'),
         state=fields.get("状态", "").get("value", [{}])[0].get("text", ""),
         progress=fields.get("完成度", "").get("value", [{}])[0].get("text", ""),
+        parent=fields.get("00_月度目标", "").get('link_record_ids')[0],
     )
 
 def to_task_record(fields: dict) -> TaskRecord:
-    print(fields)
+    # print(fields)
     return TaskRecord(
         name=fields.get("任务名称", [{}])[0].get("text", ""),
         owner=fields.get("责任人", {}).get('link_record_ids', []),
         state=fields.get("状态", ""),
         estimate_time=fields.get("预估工期（天）", 0.0),
         progress=fields.get("实际工期", {}).get("value", [0])[0] if fields.get("实际工期", {}).get("value") else 0.0,
+        parent=fields.get("周目标", "").get('link_record_ids')[0],
     )
 
 def to_contact_record(fields: dict) -> ContactRecord:
